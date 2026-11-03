@@ -1,4 +1,4 @@
-import { assert, integer, validatePacking } from './orderPreparation.js';
+import { assert, integer, validatePacking, isPackingProductCode } from './orderPreparation.js';
 
 export function palletQuantity(piecesPerCarton, boxesPerPallet) {
   const pieces = integer(piecesPerCarton, 'Pezzi per collo');
@@ -9,6 +9,7 @@ export function palletQuantity(piecesPerCarton, boxesPerPallet) {
 // One physical capture may create several box readings. The shared operationId
 // preserves that relationship; the API's eventId makes the whole batch replay-safe.
 export function appendPreparationScan(state, product, body, event, actor, makeId, at) {
+  assert(isPackingProductCode(product.code), 'Solo gli articoli IT e MKT possono essere inseriti nei colli.');
   state = structuredClone(state);
   const mode = body.mode;
   assert(['piece', 'carton', 'pallet'].includes(mode), 'Modalità non valida.');

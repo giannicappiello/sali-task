@@ -110,6 +110,11 @@ function CameraSession({ onRead, onResolve, onClose, paused, onRestart, contextL
               ? " Chiudi e usa Verifica / riprova."
               : ""),
         );
+      else if (result?.ignored) {
+        releaseGate.current.confirm(code);
+        holdCode(null);
+        setMessage(result.message);
+      }
       else if (result?.scan) {
         const scan = result.scan;
         releaseGate.current.confirm(code);
@@ -387,7 +392,7 @@ function CameraSession({ onRead, onResolve, onClose, paused, onRestart, contextL
               <button type="submit" disabled={!manual.trim() || busy || paused || !!cartonPrompt}>Cerca</button>
             </form>
             {captured && <div className="op-camera-confirmation">
-              <div className="op-camera-product" role="status">{resolving ? "Ricerca prodotto…" : product ? <><strong>{product.code} · {product.description}</strong><small>{mode==="piece" ? "1 pezzo" : mode === "pallet" ? (product.piecesPerCarton && product.boxesPerPallet ? `${product.boxesPerPallet} colli × ${product.piecesPerCarton} pezzi = ${product.boxesPerPallet * product.piecesPerCarton} pezzi/bancale` : "Completa colli per bancale e pezzi per collo nel capitolato") : product.piecesPerCarton ? `${product.piecesPerCarton} pezzi per cartone` : "Pezzi per cartone da compilare nel capitolato"}</small>{product.wrong && <small className="op-bad">Prodotto non previsto nell’ordine</small>}</> : "Prodotto non identificato"}</div>
+              <div className="op-camera-product" role="status">{resolving ? "Ricerca prodotto…" : product ? <><strong>{product.code} · {product.description}</strong><small>{product.excluded ? "Riga informativa: non richiede imballo" : mode==="piece" ? "1 pezzo" : mode === "pallet" ? (product.piecesPerCarton && product.boxesPerPallet ? `${product.boxesPerPallet} colli × ${product.piecesPerCarton} pezzi = ${product.boxesPerPallet * product.piecesPerCarton} pezzi/bancale` : "Completa colli per bancale e pezzi per collo nel capitolato") : product.piecesPerCarton ? `${product.piecesPerCarton} pezzi per cartone` : "Pezzi per cartone da compilare nel capitolato"}</small>{product.wrong && <small className="op-bad">Prodotto non previsto nell’ordine</small>}</> : "Prodotto non identificato"}</div>
               <button type="button" disabled={busy || paused || !!cartonPrompt} onClick={resetCode}>Rileggi</button>
             </div>}
             {cartonPrompt && <PreparationProductPrompt prompt={cartonPrompt} pieces={cartonPieces} onPieces={onCartonPieces} weight={unitWeight} onWeight={onUnitWeight} busy={busy || paused} onCancel={onCancelCarton} onSave={saveCarton}/>}

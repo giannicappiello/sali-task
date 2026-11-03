@@ -665,3 +665,5 @@
 .op-reprint-dialog :is(input,select) {width:100%;min-width:0;box-sizing:border-box;font:inherit;min-height:44px;}
 
 .op-document-downloads{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:10px}.op-document-downloads button{min-width:0;white-space:nowrap;font-size:12px;padding:8px 9px;gap:4px}.op-register-actions{gap:8px}
+
+.op-excluded-products{margin-top:16px;border-top:1px solid #dbe4ec;padding-top:12px}.op-excluded-products h3{font-size:15px;margin:0 0 6px}.op-excluded-products>p{font-size:13px;color:#53697a}.op-excluded-product{display:grid;grid-template-columns:minmax(80px,.7fr) minmax(0,3fr) minmax(90px,1fr);gap:6px 12px;padding:10px 0;border-bottom:1px solid #e3eaf0;overflow-wrap:anywhere}.op-excluded-product small{grid-column:2/-1;color:#53697a}@media(max-width:600px){.op-excluded-product{grid-template-columns:minmax(0,1fr);gap:4px}.op-excluded-product small{grid-column:auto}}

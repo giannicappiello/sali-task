@@ -63,7 +63,7 @@ test('MKT recognition retains ambiguities and pallet quantities cannot be forged
     {mode:'pallet',packageId:state.packages[0].id,palletId:pallet},event(),actor,event,'server');
   assert.equal(result.packages.length,2);assert.equal(result.scans.reduce((n,s)=>n+s.quantity,0),24);
   assert.ok(result.scans.every(s=>s.boxesPerPallet===2 && s.specificationVersion===3));
-  assert.throws(()=>appendPreparationScan(result,{piecesPerCarton:12,boxesPerPallet:2},{mode:'pallet',packageId:result.packages[0].id,palletId:pallet},event(),actor,event,'server'),/vuoto/);
+  assert.throws(()=>appendPreparationScan(result,{code:'MKT001',piecesPerCarton:12,boxesPerPallet:2},{mode:'pallet',packageId:result.packages[0].id,palletId:pallet},event(),actor,event,'server'),/vuoto/);
 });
 
 test('full pallet, replay, reopen, partial correction, fresh verification, BCF and immutable artifacts',async()=>{

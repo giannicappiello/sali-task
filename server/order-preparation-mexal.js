@@ -13,6 +13,7 @@ import {
   eligibleOrder,
   orderIdentity,
   orderRows,
+  isPackingProductCode,
   integer,
 } from "../shared/orderPreparation.js";
 
@@ -127,9 +128,10 @@ export async function loadOrderContext(client, reference, db, settings) {
     502,
   );
 
-  const allRows = orderRows(raw);
+  const displayRows = orderRows(raw, {all:true});
+  const allRows = orderRows(raw).filter(row => isPackingProductCode(row.code));
   assert(
-    allRows.length > 0 && allRows.length <= 300,
+    displayRows.length > 0 && displayRows.length <= 300,
     "OCM senza articoli o con troppe righe.",
   );
 
@@ -240,6 +242,7 @@ export async function loadOrderContext(client, reference, db, settings) {
 
       destination: await deliveryDestination(client,raw,identity.customerCode,customer),
       lines,
+      excludedLines: displayRows.filter(row => !isPackingProductCode(row.code)),
     },
     raw,
     hash: fingerprint(raw),
@@ -481,7 +484,7 @@ export function buildDdt(
   // Zero denotes a newly inserted row and loses the source row context used for lots.
   payload.id_riga = allIds.map(([position,id]) => [position,Number(id)]);
 
-  payload.id_magazzino = Number(raw.id_magazzino) || source.lines[0].warehouse;
+  payload.id_magazzino = Number(raw.id_magazzino) || source.lines[0]?.warehouse || settings.default_warehouse || 1;
 
   payload.id_mag_da_riga = structuredClone(
     raw.id_mag_riga || raw.id_mag_da_riga || [],
@@ -513,6 +516,13 @@ export function buildDdt(
   return payload;
 }
 
+function documentRows(preparation) {
+  // Document integrity covers every original financial row, including services.
+  // Packing eligibility must never remove them from Mexal's native conversion.
+  const original = preparation.source_raw ? orderRows(preparation.source_raw) : [...preparation.source.lines, ...(preparation.source.excludedLines || []).filter(row => !['D','T','V'].includes(row.type) && !/^[.,]/.test(row.code))];
+  return original.map(row => preparation.source.lines.find(line => line.id === row.id) || row);
+}
+
 export function verifyOrphanDdtForDeletion(actual,preparation,currentOrder) {
   const raw=unwrap(actual),order=unwrap(currentOrder),payload=preparation.export_payload;
   assert(preparation.status==='uncertain','Recupero consentito solo per un invio da verificare.',409);
@@ -520,7 +530,8 @@ export function verifyOrphanDdtForDeletion(actual,preparation,currentOrder) {
   assert(order.sigla==='OC' && Number(order.serie)===preparation.source.series && Number(order.numero)===preparation.source.number && order.cod_conto===preparation.source.customerCode,'OCM origine non corrispondente.');
   assert(text(order.data_ult_mod)===text(scalar(payload.dt_ult_mod_orig)),'OCM modificato dopo il tentativo di emissione: verifica necessaria.',409);
   const rows=orderRows(order);
-  assert(rows.length===preparation.source.lines.length && preparation.source.lines.every(line=>rows.some(r=>r.id===line.id && r.code===line.code && r.quantity===line.quantity && r.warehouse===line.warehouse)),'Contenuto OCM modificato: collegamento automatico bloccato.',409);
+  const originals=documentRows(preparation);
+  assert(rows.length===originals.length && originals.every(line=>rows.some(r=>r.id===line.id && r.code===line.code && r.quantity===line.quantity && r.warehouse===line.warehouse)),'Contenuto OCM modificato: collegamento automatico bloccato.',409);
   return raw;
 }
 
@@ -563,8 +574,9 @@ export function verifyDdt(actual, preparation, payload, {forDeletion=false}={}) 
     "DDT senza collegamento nativo all’OCM origine.",
   );
 
+  const originals = documentRows(preparation);
   const expected = new Map();
-  for (const l of preparation.source.lines)
+  for (const l of originals)
     expected.set(l.code, (expected.get(l.code) || 0) + l.quantity);
 
   const totals = new Map();
@@ -583,7 +595,7 @@ export function verifyDdt(actual, preparation, payload, {forDeletion=false}={}) 
   for (const row of orderRows(raw)) {
     const group = Number(originGroups.get(row.position)),
       originalId = Number(originRows.get(row.position));
-    const original = preparation.source.lines.find(
+    const original = originals.find(
       (line) => line.id === originalId,
     );
     assert(
@@ -593,14 +605,14 @@ export function verifyDdt(actual, preparation, payload, {forDeletion=false}={}) 
         original &&
         !usedOrigins.has(originalId) &&
         original.code === row.code &&
-        original.warehouse === row.warehouse &&
+        (original.warehouse === row.warehouse || (!isPackingProductCode(original.code) && !original.warehouse)) &&
         original.quantity === row.quantity,
       "Riga DDT non collegata alla corretta riga e magazzino OCM.",
     );
     usedOrigins.add(originalId);
   }
   assert(
-    usedOrigins.size === preparation.source.lines.length,
+    usedOrigins.size === originals.length,
     "Righe OCM mancanti nel DDT.",
   );
   function lotTotals(document) {
@@ -613,6 +625,10 @@ export function verifyDdt(actual, preparation, payload, {forDeletion=false}={}) 
     for (const row of orderRows(document)) {
       const count = Number(counts.get(row.position) || 0),
         start = Number(starts.get(row.position) || 0);
+      if (!isPackingProductCode(row.code)) {
+        for (let offset = 0; offset < count; offset++) used.add(start + offset);
+        continue;
+      }
       assert(
         Number.isSafeInteger(count) && count >= 0 && count <= 1000,
         "Numero righe lotto DDT non valido.",

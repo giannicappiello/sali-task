@@ -35,6 +35,9 @@ import {
   allocateFifo,
   distributeLots,
   packingSummary,
+  isPackingProductCode,
+  packingSource,
+  physicalPacking,
 } from "../shared/orderPreparation.js";
 
 import {
@@ -60,20 +63,30 @@ const uuid = (value) => {
   return value;
 };
 
-const exposed = (r) => ({
-  id: r.id,
-  source: r.verification?.ok ? {
-    ...r.source, destination:r.verification.destination || r.source.destination, fifoIssue: undefined, fifoDiagnostics: undefined,
-    fifoProposal: r.verification.allocations,
-  } : r.source,
-  state: r.state,
-  status: r.status,
-  version: r.version,
-  verification: r.verification,
-  ddt: r.ddt,
-  error: r.error,
-  updatedAt: r.updated_at,
-});
+const currentPacking = (r) => {
+  const source = packingSource(r.source, r.source_raw);
+  let state = ['draft','verified'].includes(r.status) ? physicalPacking(r.state) : r.state;
+  if (['draft','verified'].includes(r.status) && !source.lines.length && !state.scans.length)
+    state = {...state,packages:[],pallets:[]};
+  return {...r,source,state};
+};
+const exposed = (record) => {
+  const r=currentPacking(record);
+  return {
+    id: r.id,
+    source: r.verification?.ok ? {
+      ...r.source, destination:r.verification.destination || r.source.destination, fifoIssue: undefined, fifoDiagnostics: undefined,
+      fifoProposal: r.verification.allocations,
+    } : r.source,
+    state: r.state,
+    status: r.status,
+    version: r.version,
+    verification: r.verification,
+    ddt: r.ddt,
+    error: r.error,
+    updatedAt: r.updated_at,
+  };
+};
 
 export async function mutate(db, row, actor, action, data, event = randomUUID()) {
   const result = await db.rpc("warehouse_preparation_mutate", {
@@ -89,7 +102,7 @@ export async function mutate(db, row, actor, action, data, event = randomUUID())
     throw Object.assign(new Error(result.error.message), {
       status: result.error.code === "40001" ? 409 : 400,
     });
-  return result.data;
+  return currentPacking(result.data);
 }
 
 async function held(db, id) {
@@ -221,6 +234,7 @@ async function barcodeProduct(db, barcode, source) {
       .filter((l) => qrCode && l.code === qrCode)
       .map((l) => l.code),
     ...source.lines.filter((l) => l.barcode === barcode).map((l) => l.code),
+    ...(source.excludedLines || []).filter(l => l.code === upper(barcode) || l.barcode === barcode).map(l => l.code),
   ]);
 
   assert(
@@ -231,6 +245,7 @@ async function barcodeProduct(db, barcode, source) {
   );
 
   const code = [...matches][0];
+  if (!isPackingProductCode(code)) return {code, description:source.excludedLines?.find(line=>line.code===code)?.description || cache.data[0]?.descrizione || code, excluded:true};
   const product = source.lines.find((l) => l.code === code) || {
     code,
     description:
@@ -593,14 +608,14 @@ export function createOrderPreparationHandler({
           source: context.source,
           source_raw: context.raw,
           source_hash: context.hash,
-          state: initialPacking(),
+          state: context.source.lines.length ? initialPacking() : {pallets:[],packages:[],scans:[],confirmedLots:false},
         });
 
         return res.status(200).json({ preparation: exposed(row) });
       }
 
       const id = uuid(body.id);
-      let row = checked(await db.from(TABLE).select("*").eq("id", id).single());
+      let row = currentPacking(checked(await db.from(TABLE).select("*").eq("id", id).single()));
       if (['preview_ddt_delete','delete_orphan_ddt'].includes(op)) {
         assert(session.canConfigure && session.canWrite,'Recupero riservato agli amministratori con scrittura.',403);
         assert(row.version===Number(body.version) && row.status==='uncertain','Preparazione cambiata: aggiorna la schermata.',409);
@@ -652,7 +667,7 @@ export function createOrderPreparationHandler({
         const barcode = text(body.barcode);
         assert(barcode && barcode.length<=100 && !/^https?:\/\//i.test(barcode), "Inserisci un barcode o un codice articolo IT/MKT valido.");
         const product = await barcodeProduct(db,barcode,row.source);
-        return res.status(200).json({product:{code:product.code,description:product.description,piecesPerCarton:product.piecesPerCarton,boxesPerPallet:product.boxesPerPallet,wrong:!row.source.lines.some(item=>item.code===product.code)}});
+        return res.status(200).json({product:{code:product.code,description:product.description,piecesPerCarton:product.piecesPerCarton,boxesPerPallet:product.boxesPerPallet,excluded:!!product.excluded,wrong:!product.excluded && !row.source.lines.some(item=>item.code===product.code)}});
       }
       if (op === "get") {
         if (row.status === 'completed') return res.status(200).json({preparation:exposed(row),canWrite:session.canWrite,canConfigure:session.canConfigure});
@@ -739,6 +754,7 @@ export function createOrderPreparationHandler({
 
         uuid(body.packageId);
         const product = await barcodeProduct(db, barcode, row.source);
+        if (product.excluded) return res.status(200).json({ignored:true,message:`${product.code}: riga informativa, non richiede imballo.`,preparation:exposed(row)});
         const ordered = row.source.lines.some(line => line.code === product.code);
         const needsPieces = body.mode !== "piece" && !product.piecesPerCarton;
         const needsWeight = ordered && !product.unitWeightGrams;

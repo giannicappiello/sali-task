@@ -16,6 +16,7 @@ export function tareWeightKg(value,label='Tara') {
 // Calculate in integer milligrams; count product mass once, box tare once per box,
 // pallet tare once per pallet. FIFO splits must never multiply packaging weights.
 export function packingWeights(summary, lines, settings) {
+  if (!summary.packages.length && !summary.pallets.length) return {...summary,weightTotals:{netWeightKg:0,grossWeightKg:0,boxTareKg:0,palletTareKg:0},productWeights:[]};
   const boxTare=tareWeightKg(settings.box_tare_kg,'Peso cartone'),palletTare=tareWeightKg(settings.pallet_tare_kg,'Peso pallet');
   assert(boxTare!==null && palletTare!==null,'Configura il peso del cartone e del pallet in Configurazione Allestisci Ordini prima del riscontro.');
   const weights=new Map(lines.map(line=>[line.code,productWeightGrams(line.unitWeightGrams)]));

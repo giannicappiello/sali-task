@@ -485,6 +485,7 @@ export default function OrderPreparation() {
       if (response.verification) setCheck(response.verification);
 
       if (response.warning) setNotice(response.warning);
+      if (response.ignored) setNotice(response.message);
       if (response.shipment) setNotice('BCF confermata. Documenti archiviati e invii accodati.');
 
       if (response.scan) {
@@ -1296,7 +1297,7 @@ export default function OrderPreparation() {
           <PreparationHistory key={row.id} id={row.id}/>
           <details className="op-panel op-collapsible" open>
             <summary><h2>Prodotti dell’ordine</h2></summary>
-            <div className="op-order-products-heading" aria-hidden="true"><span>Codice IT</span><span>Richiesti</span><span>Letti</span><span>Mancanti</span></div>
+            <div className="op-order-products-heading" aria-hidden="true"><span>IT / MKT</span><span>Richiesti</span><span>Letti</span><span>Mancanti</span></div>
             <div className="op-order-products">{[...new Set(source.lines.map(item=>item.code))].map(code=>{
               const line=source.lines.find(item=>item.code===code),expected=source.lines.filter(item=>item.code===code).reduce((n,item)=>n+item.quantity,0),actual=scans.filter(item=>item.code===code).reduce((n,item)=>n+item.quantity,0);
               const lastCarton=scans.findLast(item=>item.code===code && item.mode==="carton" && item.specificationVersion),pieces=lastCarton?.quantity || line.piecesPerCarton,revision=lastCarton?.specificationVersion || line.packagingSpecificationVersion;
@@ -1304,6 +1305,10 @@ export default function OrderPreparation() {
                 <div className="op-order-product-details"><strong>{line.description}</strong><span>Barcode: {line.barcode || "Da configurare"}</span><span>{pieces ? `${format(pieces)} pezzi/cartone${revision?` — Capitolato rev. ${revision}`:""}` : "Pezzi per cartone da compilare nel capitolato prodotto"}</span>{actual>expected && <span className="op-bad">In più: {format(actual-expected)} pezzi</span>}</div>
               </details>;
             })}</div>
+            {!!source.excludedLines?.length && <div className="op-excluded-products">
+              <h3>Altre righe dell’ordine</h3><p>Non richiedono imballo e sono escluse da scansioni, riscontro e packing list.</p>
+              {source.excludedLines.map((line,index)=><div className="op-excluded-product" key={`${line.position}-${index}`}><strong>{line.code}</strong><span>{line.description || line.code}</span><span>Quantità: {Number.isFinite(line.quantity) ? format(line.quantity) : "—"}</span><small>Non richiede imballo</small></div>)}
+            </div>}
           </details>
 
           {row.status === "draft" &&

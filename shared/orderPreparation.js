@@ -1,5 +1,28 @@
 export const text = (value) => String(value ?? "").trim();
 export const upper = (value) => text(value).toUpperCase();
+// Only these article families represent goods to put in physical cartons.
+export const isPackingProductCode = (value) => /^(?:IT|MKT)/.test(upper(value));
+export function packingSource(source, raw) {
+  const lines = source.lines || [];
+  const excluded = [...(source.excludedLines || []), ...lines,
+    ...(raw ? orderRows(raw, {all:true}) : [])].filter(row => !isPackingProductCode(row.code));
+  return {...source, lines: lines.filter(row => isPackingProductCode(row.code)),
+    excludedLines: [...new Map(excluded.map(row => [row.position ?? row.id ?? row.code, row])).values()],
+    ...(source.fifoProposal ? {fifoProposal:source.fifoProposal.filter(row => isPackingProductCode(row.code))} : {})};
+}
+// Interpret legacy readings without rewriting their immutable audit records.
+// Remove containers occupied solely by excluded articles, but retain genuinely
+// empty containers so normal packaging validation continues to catch mistakes.
+export function physicalPacking(state) {
+  const scans = state.scans.filter(scan => isPackingProductCode(scan.code));
+  const occupied = new Set(state.scans.map(scan => scan.packageId));
+  const physical = new Set(scans.map(scan => scan.packageId));
+  const packages = state.packages.filter(pack => !occupied.has(pack.id) || physical.has(pack.id));
+  const occupiedPallets = new Set(state.packages.map(pack => pack.palletId));
+  const physicalPallets = new Set(packages.map(pack => pack.palletId));
+  const pallets = state.pallets.filter(pallet => !occupiedPallets.has(pallet.id) || physicalPallets.has(pallet.id));
+  return {...state, scans, packages, pallets};
+}
 export function assert(condition, message, status = 400) {
   if (!condition) throw Object.assign(new Error(message), { status });
 }
@@ -42,7 +65,7 @@ export function orderIdentity(document, year) {
     customerCode: text(document.cod_conto),
   };
 }
-export function orderRows(document) {
+export function orderRows(document, {all = false} = {}) {
   const fields = [
     "id_riga",
     "tp_riga",
@@ -74,7 +97,7 @@ export function orderRows(document) {
     }))
     .filter(
       (r) =>
-        r.code && !["D", "T", "V"].includes(r.type) && !/^[.,]/.test(r.code),
+        r.code && (all || (!["D", "T", "V"].includes(r.type) && !/^[.,]/.test(r.code))),
     );
 }
 export function initialPacking() {
@@ -145,6 +168,8 @@ export function validatePacking(state) {
   return state;
 }
 export function comparePacking(lines, state) {
+  lines = lines.filter(line => isPackingProductCode(line.code));
+  state = physicalPacking(state);
   validatePacking(state);
   const required = new Map(),
     scanned = new Map();
@@ -187,7 +212,6 @@ export function comparePacking(lines, state) {
   return {
     ok:
       discrepancies.length === 0 &&
-      required.size > 0 &&
       !empty.length &&
       !unassigned.length &&
       !emptyPallets.length,
@@ -200,6 +224,7 @@ export function comparePacking(lines, state) {
   };
 }
 export function allocateFifo(lines, lots, heldByOthers = [], today) {
+  lines = lines.filter(line => isPackingProductCode(line.code));
   assert(/^\d{8}$/.test(String(today || "")), "Data di riferimento FIFO mancante o non valida.");
   const held = new Map();
   for (const r of heldByOthers) {
@@ -267,6 +292,7 @@ export function allocateFifo(lines, lots, heldByOthers = [], today) {
   return result;
 }
 export function distributeLots(state, allocations) {
+  state = physicalPacking(state);
   const left = allocations.map((a) => ({ ...a })),
     contents = [];
   for (const scan of state.scans) {
@@ -303,6 +329,8 @@ export function distributeLots(state, allocations) {
   return [...grouped.values()];
 }
 export function packingSummary(state, contents, lines) {
+  state = physicalPacking(state);
+  contents = contents.filter(row => isPackingProductCode(row.code));
   const descriptions = new Map(lines.map((l) => [l.code, l.description]));
   return {
     totalPackages: state.packages.length,

@@ -8,6 +8,7 @@ function EventDetails({event}) {
   const removed=before?.scans?.filter(old=>state && !state.scans.some(scan=>scan.id===old.id)) || [];
   const pack=scan=>state?.packages?.find(item=>item.id===scan.packageId) || before?.packages?.find(item=>item.id===scan.packageId);
   return <div>{payload.reason && <p>{payload.reason}</p>}{payload.message && <p>{payload.message}</p>}{payload.error && <p>{payload.error}</p>}
+    {payload.dispatch?.recipientWarnings?.map((warning,index)=><p key={`${warning.role}-${index}`}>{warning.message}</p>)}
     {state && <p>{state.packages.length} colli · {state.pallets.length} bancali</p>}
     {!!(readings.length+removed.length) && <ul>{readings.map(scan=><li key={scan.id}>{scan.code} · {scan.quantity} pezzi · collo {pack(scan)?.number} · {new Date(scan.at).toLocaleString('it-IT')}{scan.corrected?' · quantità corretta':''}</li>)}{removed.map(scan=><li key={scan.id}>{scan.code} · rimossi {scan.quantity} pezzi dal collo {pack(scan)?.number}</li>)}</ul>}
     {payload.verification?.allocations && <ul>{payload.verification.allocations.map((lot,i)=><li key={i}>{lot.code} · {lot.quantity} pezzi · {lot.lotCode?`lotto ${lot.lotCode}`:'senza gestione lotti'} · magazzino {lot.warehouse}</li>)}</ul>}

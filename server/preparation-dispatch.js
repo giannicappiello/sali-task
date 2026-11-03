@@ -15,6 +15,23 @@ export function emailAddress(value) {
   assert(email.length <= 254 && /^[^\s@;,<>]+@[^\s@;,<>]+\.[^\s@;,<>]+$/.test(email), 'Indirizzo email mancante o non valido.');
   return email;
 }
+
+// Mexal permits several addresses in one field. Keep atomic validation strict
+// (also used by configuration), then validate each explicitly listed address.
+function mexalRecipientEmails(record) {
+  const values = value => Array.isArray(value)
+    ? value.flatMap(row => values(Array.isArray(row) ? row.at(-1) : row))
+    : typeof value === 'string' && value.trim() ? [value] : [];
+  const fields = ['email','mail','posta_elettronica'].flatMap(key => values(record?.[key]));
+  const emails = [], invalid = [];
+  for (const field of fields) {
+    if (/[\r\n]/.test(field)) { invalid.push(true); continue; }
+    for (const token of field.split(/[;,]/).filter(token => token.trim())) {
+      try { emails.push(emailAddress(token)); } catch { invalid.push(true); }
+    }
+  }
+  return {emails:[...new Set(emails)], invalid:invalid.length > 0};
+}
 export function validateDispatchSettings(body) {
   const settings = {};
   for (const [input,column] of [['emailCustomers','email_customers'],['emailAgents','email_agents']]) {
@@ -58,15 +75,32 @@ export async function shipmentPreview(db, client, row, settings) {
   const agentCode = text(scalar(raw.codice_agente));
   const emailCustomers = settings.email_customers !== false;
   const emailAgents = settings.email_agents !== false;
-  const candidates = [];
+  const candidates = [], recipientWarnings = [];
+  function addOptional(role, record) {
+    const result = mexalRecipientEmails(record);
+    candidates.push(...result.emails.map(email => ({role,email})));
+    if (!result.emails.length || result.invalid) recipientWarnings.push({role,
+      code:result.emails.length ? 'partially_invalid' : 'missing_or_invalid',
+      message:result.emails.length
+        ? `Invio email ${role}: alcuni indirizzi non validi sono stati esclusi; gli indirizzi validi restano destinatari.`
+        : `Email non inviata ${role === 'agente' ? 'all’agente' : 'al cliente'}: indirizzo mancante o non valido.`});
+  }
   if (emailCustomers) {
-    const customer = unwrap(await client.getJson('/clienti/' + encodeURIComponent(row.source.customerCode)));
-    candidates.push({role:'cliente',email:emailAddress(scalar(customer.email || customer.mail || customer.posta_elettronica))});
+    try {
+      const customer = unwrap(await client.getJson('/clienti/' + encodeURIComponent(row.source.customerCode)));
+      addOptional('cliente', customer);
+    } catch {
+      recipientWarnings.push({role:'cliente',code:'lookup_failed',message:'Email non inviata al cliente: recapito Mexal non verificabile.'});
+    }
   }
   if (emailAgents) {
-    assert(agentCode, 'Agente assente sull’OCM: completa l’anagrafica prima dell’emissione.', 409);
-    const agent = checked(await db.from('mexal_agenti').select('codice,email').eq('codice',agentCode).maybeSingle());
-    candidates.push({role:'agente',email:emailAddress(agent?.email)});
+    if (!agentCode) recipientWarnings.push({role:'agente',code:'agent_missing',message:'Email non inviata all’agente: agente assente sull’OCM.'});
+    else try {
+      const agent = checked(await db.from('mexal_agenti').select('codice,email').eq('codice',agentCode).maybeSingle());
+      addOptional('agente', agent);
+    } catch {
+      recipientWarnings.push({role:'agente',code:'lookup_failed',message:'Email non inviata all’agente: recapito non verificabile.'});
+    }
   }
   candidates.push(...settings.backoffice_emails.map(email => ({role:'backoffice',email:emailAddress(email)})));
   const recipients = [];
@@ -76,7 +110,7 @@ export async function shipmentPreview(db, client, row, settings) {
     else recipients.push({email:candidate.email,roles:[candidate.role]});
   }
   const snapshot = {preparationId:row.id, sourceHash:row.source_hash, version:row.version,
-    recipients, agentCode, emailCustomers, emailAgents, pdfPath:settings.ddt_pdf_path, pdfPrintModule:'S', packingLayout:'compact-v2', contractEvidence:settings.contract_evidence,
+    recipients, recipientWarnings, agentCode, emailCustomers, emailAgents, pdfPath:settings.ddt_pdf_path, pdfPrintModule:'S', packingLayout:'compact-v2', contractEvidence:settings.contract_evidence,
     subject:settings.email_subject || 'Documenti spedizione {documento}',
     body:settings.email_body || 'In allegato la bolla {documento} e la packing list dell’ordine {ordine}.',
   };
@@ -94,7 +128,7 @@ export async function shipmentReadback(db, row, kind) {
     db.from('warehouse_current_preparation_documents').select('kind,filename,sha256,created_at').eq('preparation_id',row.id),
     db.from('warehouse_shipment_emails').select('id,recipient,roles,status,attempts,last_error,sent_at,provider_message_id').eq('preparation_id',row.id),
   ]);
-  return {documents:checked(documents),emails:checked(jobs)};
+  return {documents:checked(documents),emails:checked(jobs),recipientWarnings:row.dispatch_snapshot?.recipientWarnings || []};
 }
 
 // Recovery only prepares missing artifacts. It never reissues the Mexal document.

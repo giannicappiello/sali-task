@@ -85,6 +85,7 @@ const exposed = (record) => {
     ddt: r.ddt,
     error: r.error,
     updatedAt: r.updated_at,
+    recipientWarnings: r.dispatch_snapshot?.recipientWarnings || [],
   };
 };
 

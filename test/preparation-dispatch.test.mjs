@@ -46,7 +46,9 @@ test('recipient switches persist with audit and exclude disabled roles without r
     const customerOnly=await shipmentPreview(f.db,client,row,{...saved,email_customers:true});
     assert.equal(customerCalls,1);assert.ok(customerOnly.recipients.some(r=>r.roles.includes('cliente')));
     assert.notEqual(customerOnly.hash,disabled.hash);
-    await assert.rejects(shipmentPreview(f.db,client,row,{...saved,email_agents:true}),/Agente assente/);
+    const missingAgent=await shipmentPreview(f.db,client,row,{...saved,email_agents:true});
+    assert.equal(missingAgent.recipientWarnings[0].role,'agente');
+    assert.equal(missingAgent.recipientWarnings[0].code,'agent_missing');
     assert.throws(()=>validateDispatchSettings({emailCustomers:'false'}),/Scelta destinatari/);
     assert.deepEqual(validateDispatchSettings({emailCustomers:false,emailAgents:true}),{email_customers:false,email_agents:true});
   } finally {await f.sql.close();}
@@ -266,4 +268,70 @@ test('MKT present on the order can fill a missing specification and be scanned',
     assert.equal(scan.scan.code,'MKT-ALFA');assert.equal(scan.scan.wrong,false);
     assert.equal((await f.sql.query("select data->>'totalWeightGrams' weight from workspace_product_specifications where article_code='MKT-ALFA'")).rows[0].weight,'100');
   } finally {await f.sql.close();}
+});
+
+test('Mexal lists of addresses are split, deduplicated and validated separately without accepting header injection',async()=>{
+ const f=await fixture();
+ try {
+  const settings=ok(await f.call('ddt_settings')).settings;
+  const row={id:event(),version:1,source_hash:'test',source:{customerCode:'501.00001'},source_raw:{codice_agente:'602.00001'}};
+  await f.sql.exec("update mexal_agenti set email='one@example.test; two@example.test; ONE@example.test'");
+  const client={getJson:async()=>({email:[[1,''],[2,'customer@example.test']],mail:' customer@example.test '})};
+  const preview=await shipmentPreview(f.db,client,row,settings);
+  assert.deepEqual(preview.recipientWarnings,[]);
+  assert.deepEqual(preview.recipients.filter(r=>r.roles.includes('agente')).map(r=>r.email),['one@example.test','two@example.test']);
+  assert.equal(preview.recipients.length,4);
+  await f.sql.exec("update mexal_agenti set email='one@example.test; broken-address'");
+  const partial=await shipmentPreview(f.db,client,row,settings);
+  assert.equal(partial.recipientWarnings[0].code,'partially_invalid');
+  assert(partial.recipients.some(r=>r.email==='one@example.test'));
+  assert.notEqual(partial.hash,preview.hash);
+  const injection=await shipmentPreview(f.db,{getJson:async()=>({email:'valid@example.test\r\nBcc: outsider@example.test'})},row,settings);
+  assert(!injection.recipients.some(r=>r.roles.includes('cliente')));
+  assert(injection.recipientWarnings.some(r=>r.role==='cliente'));
+  const failedLookup=await shipmentPreview(f.db,{getJson:async()=>{throw Error('offline');}},row,settings);
+  assert(failedLookup.recipientWarnings.some(r=>r.code==='lookup_failed'));
+ } finally {await f.sql.close();}
+});
+
+test('missing client and agent emails do not block BCF, immutable PDFs, print jobs or valid backoffice dispatch',async()=>{
+ const f=await fixture();
+ try {
+  f.mexal.printMovementPdf=async()=>f.mexal.getBinary();
+  const get=f.mexal.getJson;
+  f.mexal.getJson=async path=>path.startsWith('/clienti/')?{...(await get(path)),email:''}:get(path);
+  await f.sql.exec("update mexal_agenti set email=null;update warehouse_preparation_settings set ddt_pdf_path='mexal:stampa_movimento_magazzino'");
+  ok(await f.call('begin',{reference:'OC+1+900'}));
+  ok(await f.call('add_pallet',{palletId:event(),assignUnassigned:true}));
+  const packageId=f.row.state.packages[0].id;
+  ok(await f.call('scan',{packageId,barcode:'IT0001',mode:'carton'}));
+  ok(await f.call('scan',{packageId,barcode:'IT0002',mode:'piece'}));
+  ok(await f.call('verify'));
+  const preview=ok(await f.call('preview_dispatch'));
+  assert.equal(preview.recipientWarnings.length,2);
+  assert.deepEqual(preview.recipients,[{email:'office@example.test',roles:['backoffice']}]);
+  const result=ok(await f.call('export',{dispatchHash:preview.hash}));
+  assert.equal(result.preparation.status,'completed');assert.equal(f.mexal.sends,1);
+  assert.equal(result.preparation.recipientWarnings.length,2);
+  const saved=(await f.sql.query('select dispatch_snapshot from warehouse_order_preparations')).rows[0].dispatch_snapshot;
+  assert.deepEqual(saved.recipientWarnings,preview.recipientWarnings);
+  const jobs=(await f.sql.query('select recipient from warehouse_shipment_emails')).rows;
+  assert.deepEqual(jobs,[{recipient:'office@example.test'}]);
+  assert.equal((await f.sql.query('select count(*)::int n from warehouse_preparation_documents')).rows[0].n,4);
+  await f.sql.exec("insert into warehouse_printers(id,station,name) values('TEST:Laser','TEST','Laser');update warehouse_preparation_settings set ddt_printer_id='TEST:Laser',packing_printer_id='TEST:Laser'");
+  for(const kind of ['bcf_print','packing_pallet_'+f.row.state.pallets[0].id]) {
+    const queued=await f.db.rpc('warehouse_enqueue_print',{p_id:f.row.id,p_request:event(),p_kind:kind,p_actor:actor});
+    assert.ifError(queued.error);
+  }
+  assert.equal((await f.sql.query('select count(*)::int n from warehouse_print_jobs')).rows[0].n,2);
+  const audit=(await f.sql.query("select payload from warehouse_preparation_events where event_type='claim_export'")).rows[0].payload;
+  assert.deepEqual(audit.dispatch.recipientWarnings,preview.recipientWarnings);
+  const history=ok(await f.call('audit_export')).records.find(r=>r.operation==='claim_export');
+  assert.match(history.reason,/cliente/);assert.match(history.reason,/agente/);
+  assert.equal(ok(await f.call('get')).preparation.recipientWarnings.length,2);
+  const snapshot=await f.sql.query("select sha256 from warehouse_preparation_documents where kind='packing_list'");
+  ok(await f.call('finalize_documents'));
+  assert.equal((await f.sql.query('select count(*)::int n from warehouse_shipment_emails')).rows[0].n,1);
+  assert.equal((await f.sql.query("select sha256 from warehouse_preparation_documents where kind='packing_list'")).rows[0].sha256,snapshot.rows[0].sha256);
+ } finally {await f.sql.close();}
 });

@@ -1062,6 +1062,7 @@ export default function OrderPreparation() {
               >
                 <h3>Conferma emissione BCF su Mexal</h3>
                 <p>La BCF e la packing list completa saranno inviate a:</p><ul>{dispatchPreview?.recipients.map(recipient=><li key={recipient.email}>{recipient.roles.join(', ')}: {recipient.email}</li>)}</ul>
+                {!!dispatchPreview?.recipientWarnings?.length && <div className="op-notice" role="status"><strong>La procedura continua. Segnalazioni email:</strong><ul>{dispatchPreview.recipientWarnings.map((warning,index)=><li key={`${warning.role}-${index}`}>{warning.message}</li>)}</ul></div>}
                 <p>
                   OCM {source.series}/{source.number} · {source.customerName} ·{" "}
                   {totalPieces} pezzi · {packages.length} colli ·{" "}
@@ -1133,6 +1134,7 @@ export default function OrderPreparation() {
             <div className="op-toolbar op-register-actions">{row.status==='completed' && <button disabled={busy || !canWrite} onClick={()=>{setError('');setNotice('');setReprintOpen(true);}}>Ristampa</button>}<button disabled={busy} onClick={()=>void downloadRegister()}>Scarica Registro</button></div>
             {completionStatus && !['completed','blocked'].includes(completionStatus.status) && <p className="op-notice" role="status">Completamento automatico di documenti, invii e stampa in corso.</p>}
             {completionStatus?.status==='blocked' && <p className="op-error" role="alert">Completamento da verificare: {completionStatus.last_error}</p>}
+            {!!row.recipientWarnings?.length && <div className="op-notice" role="status"><strong>Segnalazioni invio email</strong><ul>{row.recipientWarnings.map((warning,index)=><li key={`${warning.role}-${index}`}>{warning.message}</li>)}</ul></div>}
             {row.ddt && (
               <p className="op-good">
                 DDT {row.ddt.series}/{row.ddt.number} confermato in Mexal.

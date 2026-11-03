@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { preparationApi } from '../../../pages/Warehouse/preparationApi.js';
+import { preparationApi, proposeDdtPrintProfile } from '../../../pages/Warehouse/preparationApi.js';
 import '../../../pages/Warehouse/orderPreparation.css';
 
 const statusNames = {queued:'In coda',leased:'Acquisita',sending:'Invio in corso',retry:'Da riprovare',uncertain:'Esito da verificare',sent:'Accettata dal servizio email',failed:'Errore definitivo'};
 export default function DdtSettings() {
   const [data,setData] = useState(null), [form,setForm] = useState({}), [emails,setEmails] = useState([]), [prints,setPrints] = useState([]);
   const [error,setError] = useState(''), [notice,setNotice] = useState(''), [busy,setBusy] = useState(false);
+  const [printProposal,setPrintProposal] = useState(null);
   const [filter,setFilter] = useState(''), [offset,setOffset] = useState(0), [next,setNext] = useState(null), [resolution,setResolution] = useState(null), [reason,setReason] = useState('');
   const load = useCallback(async () => {
     setError('');
@@ -36,6 +37,15 @@ export default function DdtSettings() {
     try {await preparationApi('ddt_verify',{settingsVersion:data.settings.updated_at});await load();setNotice('Collegamento BCF verificato: PDF originale Mexal disponibile.');}
     catch(e){setError(e.message);}finally{setBusy(false);}
   }
+  async function preparePrintProfile() {
+    setBusy(true);setError('');setNotice('');
+    try {
+      const response=await proposeDdtPrintProfile();
+      const proposal=response.result?.controlledAction;
+      if(!proposal?.id) throw Error('Proposta non disponibile. Verifica lo stato prima di riprovare.');
+      setPrintProposal(proposal.id);
+    } catch(e){setError(e.message);}finally{setBusy(false);}
+  }
   return <main className="order-preparation op-page integrations-page ddt-settings-page"><h1>Configurazioni DDT</h1><p>Configura chi riceve BCF e packing list. Gli indirizzi di clienti e agenti provengono dalle anagrafiche dell’ordine; il riepilogo mostra i destinatari effettivi prima dell’emissione.</p>
     {error && <p role="alert" className="op-error">{error}</p>}{notice && <p role="status">{notice}</p>}
     {data && <form className="op-settings" onSubmit={save}><fieldset disabled={busy || !data.canConfigure}><legend>Destinatari e messaggio</legend>
@@ -57,6 +67,12 @@ export default function DdtSettings() {
       <details><summary>Dettagli della verifica</summary>
         <p>{form.contractEvidence || 'Nessuna verifica completata.'}</p>
       </details><button type="submit">Salva configurazione DDT</button></fieldset></form>}
+    <section className="op-panel"><h2>Profilo stampa Magazzino</h2>
+      <p>DDT fronte/retro sul lato lungo; packing list fronte/retro con ogni bancale su fogli separati. Tutto in bianco e nero dal vassoio 1.</p>
+      <p>{data?.settings.print_options?.duplex==='long-edge'?'Profilo attivo per le nuove stampe.':'Profilo non ancora attivo.'}</p>
+      {data?.canConfigure && <button disabled={busy} onClick={()=>void preparePrintProfile()}>Prepara attivazione del profilo stampa</button>}
+      {printProposal && <p role="status">Proposta pronta. <Link to={'/assistente-ai?view=review&kind=controlled&proposalId='+printProposal}>Apri riepilogo e conferma in Workspace</Link></p>}
+    </section>
     <section className="op-panel"><h2>Controllo invii</h2><div className="op-toolbar"><label>Stato<select value={filter} onChange={e=>{setOffset(0);setFilter(e.target.value);}}><option value="">Tutti</option>{Object.entries(statusNames).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label><button disabled={busy} onClick={()=>void load()}>Aggiorna</button></div>
       <div className="op-table-wrap"><table><thead><tr><th>Ordine</th><th>Destinatario</th><th>Stato</th><th>Tentativi</th><th>Ultimo errore</th><th>Azioni</th></tr></thead><tbody>{emails.map(mail=><tr key={mail.id}>
         <td><Link to={'/logistica/allestisci-ordini?id='+mail.preparation_id}>Apri ordine</Link></td><td>{mail.recipient}<small> · {mail.roles.join(', ')}</small></td><td>{statusNames[mail.status]}{mail.sent_at && <small> · {new Date(mail.sent_at).toLocaleString('it-IT')}</small>}</td><td>{mail.attempts}</td><td>{mail.last_error || '—'}</td>

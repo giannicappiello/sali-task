@@ -53,6 +53,10 @@ test('mixed OCM bypasses service catalog/unit/stock checks, ignores service scan
     const context=await loadOrderContext(mexal,'OC+1+900',db,settings);
     assert.equal(context.source.lines.length,2);assert.equal(context.source.excludedLines[0].code,'SERV01');assert.equal(serviceReads,0);
     const call=makeHandler(db,mexal);let {preparation:row}=await call('begin',{reference:'OC+1+900'});
+    const listing=await call('list');
+    assert.equal(listing.preparations.length,1);
+    assert.equal(listing.preparations[0].id,row.id);
+    assert.equal(listing.preparations[0].state,undefined,'the list must not load detailed scans');
     const before=(await sql.query('select count(*)::int n from warehouse_preparation_events')).rows[0].n;
     const input={id:row.id,version:row.version,packageId:row.state.packages[0].id,mode:'pallet',barcode:'SERV01'};
     const ignored=await call('scan',input);assert(ignored.ignored);assert.equal(ignored.preparation.version,row.version);assert.equal(ignored.preparation.state.scans.length,0);
@@ -74,6 +78,7 @@ test('mixed OCM bypasses service catalog/unit/stock checks, ignores service scan
     for(const [barcode,mode] of [['IT0001','carton'],['IT0002','piece']]) ({preparation:row}=await call('scan',{...input,version:row.version,barcode,mode}));
     const verified=await call('verify',{id:row.id,version:row.version});row=verified.preparation;
     assert(verified.verification.ok);assert.equal(verified.verification.summary.totalPieces,3);assert(!JSON.stringify(verified.verification.summary).includes('SERV01'));
+    assert.equal((await call('list')).preparations[0].status,'verified');
     const prep={...row,source_raw:mexal.raw},payload=buildDdt(prep,context,verified.verification.allocations,settings,'20261103');
     assert.deepEqual(payload.quantita,mexal.raw.quantita);assert.deepEqual(payload.id_riga,mexal.raw.id_riga);
     const actual=await mexal.postJson('/documenti/movimenti-magazzino?sigla_trasformazione=BC',payload);

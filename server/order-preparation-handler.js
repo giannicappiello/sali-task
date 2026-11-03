@@ -486,7 +486,12 @@ export function createOrderPreparationHandler({
         return res.status(200).json({
           orders: index.orders,
           sync: orderIndexStatus(index),
-          preparations: preparations.map(exposed),
+          // This query deliberately omits packing state: list summaries must
+          // never pass through the detailed scan/box normalization pipeline.
+          preparations: preparations.map(r => ({
+            id:r.id, source:packingSource(r.source), status:r.status,
+            version:r.version, ddt:r.ddt, updatedAt:r.updated_at,
+          })),
           canWrite: session.canWrite,
           canConfigure: session.canConfigure,
         });

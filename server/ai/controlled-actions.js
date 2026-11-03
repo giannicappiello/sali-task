@@ -13,6 +13,8 @@ import { productBulkSchema, productChangeSchema, productChangePreview } from './
 import { machineCall, machineDraftSchema } from './machine-instructions.js';
 import { rdpCreateSchema, proposeRdpCreation, validateRdpSnapshot, executeRdpCreation } from './rdp-create.js';
 
+import {ddtPrintSettingsSchema, previewDdtPrintSettings, applyDdtPrintSettings} from './ddt-print-settings.js';
+
 const text = { type: "string", maxLength: 500 };
 const identifier = { type: "string", minLength: 1, maxLength: 160 };
 const filters = {
@@ -64,6 +66,8 @@ const externalEntitySchema = (entityLabel) => ({
 });
 
 export const CONTROLLED_AI_ACTIONS = Object.freeze({
+  DDT_PRINT_SETTINGS_UPDATE: {system:'mes',risk:'write',permission:'integrations.configure',schema:ddtPrintSettingsSchema,
+    description:'Imposta solo per nuove stampe DDT e packing per bancale: MAGAZZINO, fronte/retro lato lungo, bianco e nero, vassoio 1. Non stampa documenti.'},
   MES_PRODUCTION_RESUME_CLOSE: { system: 'mes', risk: 'write', permission: 'progremes.write', schema: resumeClosureSchema, description: 'Riprende una chiusura già iniziata dal consuntivo congelato: conserva pesate, quantità e documenti riusciti. Prima leggere MES_PRODUCTION_CLOSURE_STATE. Non forza qualità né presume SL/CL manuali. Verificare nuovamente lo stato dopo esecuzione o timeout.' },
   MES_PRODUCTION_START: { system: 'mes', risk: 'write', permission: 'progremes.write', schema: batchStartSchema, description: 'Stampa il foglio del batch e avvia solo dopo stampa confermata. Leggere MES_PRODUCTION_START_PREVIEW. Seguire lâ€™esito con MES_PRODUCTION_START_STATUS senza ripetere lâ€™azione.' },
   MES_PRODUCTION_DATES_CORRECT: {system:'mes',risk:'write',permission:'progremes.write',schema:productionDatesSchema,
@@ -153,6 +157,7 @@ function canPropose(auth, descriptor) {
     CONTROLLED_AI_ACTIONS.PURCHASE_PROPOSAL_CREATE, CONTROLLED_AI_ACTIONS.MONITOR_RULE_CREATE].includes(descriptor)) return false;
   if (auth.manualPlanning === true) return [CONTROLLED_AI_ACTIONS.MES_PLAN_APPLY, CONTROLLED_AI_ACTIONS.MES_ODL_VERIFY].includes(descriptor);
   const admin = auth.profile?.ruoli?.amministratore_workspace === true;
+  if (descriptor === CONTROLLED_AI_ACTIONS.DDT_PRINT_SETTINGS_UPDATE && !admin) return false;
   const level = String(auth.capabilities?.role_ai_level || (auth.profile?.ruoli?.amministratore_workspace ? "conferma" : "analisi"));
   if (!admin && !["bozza", "conferma"].includes(level)) return false;
   if (descriptor.system === "mes" && auth.capabilities?.progremes !== true) return false;
@@ -188,6 +193,7 @@ export async function proposeControlledAction(auth, tool, input, { correlationId
     input = { ...input, evidence: state };
   }
   if (tool === 'MES_PRODUCTION_START') input = { ...input, evidence: await productionStartPreview(auth, input) };
+  if (tool === 'DDT_PRINT_SETTINGS_UPDATE') input = await previewDdtPrintSettings(auth,input);
   if (tool === 'RDP_CREATE') input = await proposeRdpCreation(auth, input);
   if (['ARTICLE_UPDATE', 'ARTICLE_BULK_UPDATE'].includes(tool)) input = await productChangePreview(auth, tool, input);
   if (tool === 'UI_CONFIGURE_VIEW') {
@@ -255,6 +261,7 @@ function requiredEnvironment(name) {
 }
 
 async function executeExternalAction(auth, pending) {
+  if (pending.tool === 'DDT_PRINT_SETTINGS_UPDATE') return applyDdtPrintSettings(auth,pending);
   if (pending.tool === 'MES_PRODUCTION_START') return executeProductionStart(auth, pending);
   if (pending.tool === 'RDP_CREATE') {
     let result = {}, failure = null;

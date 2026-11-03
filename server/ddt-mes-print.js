@@ -31,13 +31,20 @@ export function createMesDdtPrinting({env=globalThis.process.env,transport=fetch
       if(job.provider_job_id) remote=await request('print/'+job.provider_job_id);
       else {
         // A selectable copy count uses the original single-copy DDT, never the archived three-copy PDF.
-        const kind=job.copies != null && job.document_kind==='bcf_print' ? 'bcf' : job.document_kind;
-        const copies=job.copies ?? 1;
+        const printOptions=job.print_options || {};
+        const hasOptions=Object.keys(printOptions).length>0;
+        const kind=(job.copies != null || hasOptions) && job.document_kind==='bcf_print' ? 'bcf' : job.document_kind;
+        const copies=job.copies ?? (hasOptions && job.document_kind==='bcf_print' ? 3 : 1);
         assert(Number.isInteger(copies) && copies>=1 && copies<=50,'Numero copie non valido.');
         const doc=checked(await db.from('warehouse_current_preparation_documents').select('filename,base64,sha256').eq('preparation_id',job.preparation_id).eq('kind',kind).single());
         const bytes=Buffer.from(doc.base64,'base64');
         assert(createHash('sha256').update(bytes).digest('hex')===doc.sha256,'Integrità PDF non verificata.');
         const query=new URLSearchParams({requestId:'ddt:'+job.id,documentType:'warehouse',fileName:doc.filename,printer:job.printer_id.slice(4),copies:String(copies),relatedId:job.preparation_id});
+        if(hasOptions){
+          assert(printOptions.duplex==='long-edge' && printOptions.color==='monochrome' && printOptions.tray==='1','Profilo stampa non valido.');
+          assert(job.document_kind==='bcf_print' || /^packing_pallet_[a-f0-9-]{36}$/i.test(job.document_kind),'Stampa duplex consentita solo per DDT o packing di un singolo bancale.');
+          for(const [key,value] of Object.entries(printOptions))query.set(key,value);
+        }
         if(job.reprint_of){
           const original=checked(await db.from('warehouse_print_jobs').select('provider_job_id').eq('id',job.reprint_of).single());
           assert(original.provider_job_id,'Verifica prima l’esito della stampa originale.',409);
@@ -51,5 +58,5 @@ export function createMesDdtPrinting({env=globalThis.process.env,transport=fetch
       return checked(await db.rpc('warehouse_mes_print',{p_id:id,p_action:'error',p_token:job.token,p_data:{error:error.message}}));
     }
   }
-  return {inventory,sync};
+  return {inventory,sync,readInventory:()=>request('printers')};
 }

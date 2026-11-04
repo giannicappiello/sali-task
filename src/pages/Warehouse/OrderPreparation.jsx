@@ -1033,7 +1033,7 @@ export default function OrderPreparation() {
               </p>
             ))}
 
-            {editable && (row.status !== "verified" || !row.verification?.summary?.weightTotals) && (
+            {editable && (
               <button
                 className="op-primary"
                 disabled={busy || !scans.length}
@@ -1042,7 +1042,7 @@ export default function OrderPreparation() {
                   void perform("verify");
                 }}
               >
-                Riscontra
+                {row.status === "verified" ? "Ripeti riscontro" : "Riscontra"}
               </button>
             )}
 

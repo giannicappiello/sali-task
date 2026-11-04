@@ -44,3 +44,19 @@ test('a group cannot bridge a local collaborator to a foreign director', () => {
   assert.equal(canSelectChatUser(manager,manager,[]),false);
   assert.equal(canSelectChatUser(manager,user('other','Responsabile reparto','logistics'),[director]),true);
 });
+
+test('private customers can contact Progre staff but never each other', () => {
+  const customer = { ...user('private1', 'Responsabile reparto', 'private'), is_customer: true, is_team_member: false };
+  const other = { ...user('private2', 'Cliente', 'private'), is_customer: true, is_team_member: false };
+  for (const staff of [member, director, {...outsider, is_team_member: true}]) {
+    assert.equal(canChatTogether(customer, staff), true);
+    assert.equal(canChatTogether(staff, customer), true);
+  }
+  assert.equal(canChatTogether(customer, other), false);
+  assert.equal(canChatTogether(other, customer), false);
+  assert.equal(canChatTogether({...customer, ruoli: {amministratore_workspace: true}}, other), false);
+  assert.equal(canSelectChatUser(member, other, [customer]), false);
+  assert.equal(canChatTogether(customer, {...member, attivo: false}), false);
+  assert.equal(canChatTogether(customer, {...member, is_team_member: false}), false);
+  assert.equal(canChatTogether(customer, user('external', 'Collaboratore esterno', 'private')), false);
+});

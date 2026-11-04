@@ -292,9 +292,10 @@ export function buildMexalClient({ request = requestMexal, warehouse, retryOptio
     async printMovementPdf(document) {
       const { sigla, serie, numero, cod_conto, cod_modulo } = document;
       if (sigla !== 'BC' || !Number.isSafeInteger(serie) || serie < 1 || !Number.isSafeInteger(numero) || numero < 1 || !/^[0-9.]{3,20}$/.test(cod_conto) || cod_modulo !== 'F') throw new Error('Riferimento BCF non valido.');
-      // Use the requested BCF layout with prices for the PDF as well as the stored movement.
+      // The stored movement is BCF; its F layout is an address label.
+      // Use BC1 (Bolla x Ft Elettronica), verified to include prices, discounts and totals.
       // The print-only service does not issue or change the movement.
-      const body = JSON.stringify({cmd:'stampa_movimento_magazzino',dati:{sigla,serie,numero,cod_conto,cod_modulo:'F'}});
+      const body = JSON.stringify({cmd:'stampa_movimento_magazzino',dati:{sigla,serie,numero,cod_conto,cod_modulo:'1'}});
       const response = await request({url:`${baseUrl}/webapi/servizi`,headers:{...headers,Accept:'application/pdf','Content-Type':'application/json','Content-Length':Buffer.byteLength(body)},method:'POST',body,binary:true,timeoutMs:60000});
       if (response.status < 200 || response.status >= 300) {
         parseJsonResponse({...response,body:Buffer.from(response.body).toString('utf8')},'Stampa PDF BCF Mexal');

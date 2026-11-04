@@ -72,14 +72,14 @@ l'emissione: il completamento automatico recupera esclusivamente gli artefatti.
 
 Il documento emesso resta BCF (`cod_modulo:F`), con trasformazione nativa dell�OCM.
 Per il PDF il servizio `POST /webapi/servizi`, comando `stampa_movimento_magazzino`,
-richiede esplicitamente `dati.cod_modulo:F`: la bolla deve essere stampata in **BCF con prezzi**,
-come richiesto il 4 novembre 2026. Il precedente override a `S` produceva BCS senza prezzi.
-Il client valida il riferimento BCF e usa F anche per recuperare il PDF originale Mexal;
-la stampa non emette un secondo movimento e non cambia il documento esistente.
-Le nuove spedizioni archiviano `pdfPrintModule:F`: PDF scaricato, allegato email e file
-con tre copie per la stampante provengono dallo stesso PDF BCF. Le ristampe di questi
-file non attivano la vecchia correzione del layout. I PDF storici già archiviati in S
-non vengono rigenerati o reinviati automaticamente da questo rilascio.
+richiede `dati.cod_modulo:1`: il layout **BC1 - Bolla x Ft Elettronica** include prezzi,
+sconti, totale scontato e IVA. Il catalogo reale Mexal e il PDF di una bolla esistente
+sono stati verificati il 4 novembre 2026. BCX mostra anch'esso i prezzi; BCF e invece
+Stampa Indirizzo e BCS e Bolla senza Prezzi: non usare F o S per il PDF richiesto.
+Il documento emesso resta BCF (`cod_modulo:F`): il modulo di stampa non riemette o
+modifica il movimento. Le nuove spedizioni archiviano `pdfPrintModule:1`; download,
+allegati email e tre copie di stampa provengono dallo stesso PDF BC1.
+I PDF storici gia archiviati non vengono rigenerati o reinviati automaticamente.
 
 I PDF storici con layout indirizzo e le packing list precedenti non vengono
 sovrascritti. Le correzioni appendono versioni in

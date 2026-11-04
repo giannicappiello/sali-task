@@ -9,7 +9,7 @@ import {verifyDdt} from './order-preparation-mexal.js';
 // Corrections append versions; previously printed/emailed PDFs remain immutable.
 export async function ensureDdtPdf(db,client,row,actor=row.updated_by,canCorrect=true) {
   const current=checked(await db.from('warehouse_current_preparation_documents').select('sha256,snapshot').eq('preparation_id',row.id).eq('kind','bcf').single());
-  if(['F','S'].includes(current.snapshot.pdfPrintModule || current.snapshot.dispatch?.pdfPrintModule) || current.snapshot.dispatch?.pdfPath!=='mexal:stampa_movimento_magazzino')return;
+  if(['1','F','S'].includes(current.snapshot.pdfPrintModule || current.snapshot.dispatch?.pdfPrintModule) || current.snapshot.dispatch?.pdfPath!=='mexal:stampa_movimento_magazzino')return;
   assert(canCorrect,'PDF DDT da aggiornare da un operatore abilitato.',403);
   assert(Number(client.anno)===row.source.year,'Anno Mexal diverso dal documento.',409);
   verifyDdt(await client.getJson('/documenti/movimenti-magazzino/'+encodeURIComponent(row.ddt.reference)),row,row.export_payload);

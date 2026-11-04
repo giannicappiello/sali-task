@@ -416,7 +416,7 @@ export function createOrderPreparationHandler({
         assert(report.services?.ok, report.services?.error || 'Recupero PDF Mexal non verificato.',409);
         const result = await db.rpc('warehouse_configure_preparation',{p_actor:profile.id,p_expected:body.settingsVersion,p_settings:{
           ddt_pdf_path:MEXAL_BCF_PDF_SERVICE,bcf_contract_verified:true,
-          contract_evidence:`${report.checkedAt}: Documento BCF; PDF BCF con modulo F (con prezzi); ${report.services.command}; ${report.services.reference}; PDF ${report.services.bytes} byte; SHA256 ${report.services.sha256}`,
+          contract_evidence:`${report.checkedAt}: Documento BCF; PDF con modulo BC1 (Bolla x Ft Elettronica), con prezzi, sconti e totali; ${report.services.command}; ${report.services.reference}; PDF ${report.services.bytes} byte; SHA256 ${report.services.sha256}`,
         }});
         if (result.error) throw Object.assign(new Error(result.error.message),{status:result.error.code === '40001'?409:400});
         return res.status(200).json({verified:true,checkedAt:report.checkedAt,bytes:report.services.bytes});

@@ -352,10 +352,12 @@ export default function OrderPreparation() {
   },[row?.id,row?.status,accept]);
 
   const load = useCallback(
-    async (refresh = false) => {
-      setLoading(true);
-      setError("");
-      setNotice("");
+    async (refresh = false, { preserveFeedback = false } = {}) => {
+      if (!preserveFeedback) {
+        setLoading(true);
+        setError("");
+        setNotice("");
+      }
       setCartonPrompt(null);
       try {
         const r = await preparationApi(
@@ -375,9 +377,10 @@ export default function OrderPreparation() {
           setRow(null);
         }
       } catch (e) {
+        if (preserveFeedback) throw e;
         setError(e.message);
       } finally {
-        setLoading(false);
+        if (!preserveFeedback) setLoading(false);
       }
     },
     [id, accept],
@@ -512,7 +515,13 @@ export default function OrderPreparation() {
     } catch (e) {
       setError(e.message);
       if (!e.status || e.status >= 500) setPending({ operation, body });
-      if (e.status === 409) await load();
+      if (e.status === 409) {
+        try {
+          await load(false, { preserveFeedback: true });
+        } catch (refreshError) {
+          setError(`${e.message} Aggiornamento della preparazione non riuscito: ${refreshError.message}`);
+        }
+      }
       return { error: e.message, status: e.status };
     } finally {
       lock.current = false;

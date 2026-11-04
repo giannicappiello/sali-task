@@ -95,15 +95,22 @@ export async function eligibleOrders(client) {
 
 export async function deliveryDestination(client, raw, customerCode, customer = null) {
   const shippingId = text(scalar(raw.id_ind_sped));
+  const separateAddress = shippingId && shippingId !== "0";
   const code = shippingId && shippingId !== "0" ? shippingId : text(scalar(raw.cod_anag_sped));
+  const party = customer || unwrap(await client.getJson("/clienti/" + encodeURIComponent(customerCode)));
+  assert(!text(party.codice) || upper(party.codice) === upper(customerCode), "Anagrafica Mexal diversa dal cliente dell'ordine.");
+  const partyAddress = () => ({code:code && code !== "0" ? code : "",name:text(party.ragione_sociale),address:text(party.indirizzo),city:text(party.localita),postalCode:text(party.cap),province:text(party.provincia),country:text(party.cod_paese || party.paese_iso)});
+  // cod_anag_sped may identify the customer's own anagraphic destination
+  // (client cod_ind_sped), not a separate /indirizzi-spedizione resource.
+  // An explicit id_ind_sped always retains precedence and ownership checks.
+  if (!separateAddress && code && code !== "0" && code === text(scalar(party.cod_ind_sped)) && text(party.indirizzo)) return partyAddress();
   if(code && code !== "0") {
     const address = unwrap(await client.getJson("/indirizzi-spedizione/" + encodeURIComponent(code)));
-    assert(text(address.id) === code && (!address.cod_conto || upper(address.cod_conto) === upper(customerCode)),"Destinazione Mexal non coerente con il cliente dell'ordine.");
+    assert(text(scalar(address.id)) === code && (!text(scalar(address.cod_conto)) || upper(scalar(address.cod_conto)) === upper(customerCode)),"Destinazione Mexal non coerente con il cliente dell'ordine.");
     assert(text(address.indirizzo),"Indirizzo di spedizione Mexal non compilato.");
     return {code,name:text(address.descrizione),address:text(address.indirizzo),postalCode:text(address.cap),city:text(address.localita),province:text(address.provincia),country:text(address.cod_paese)};
   }
-  const party = customer || unwrap(await client.getJson("/clienti/" + encodeURIComponent(customerCode)));
-  return {code:"",name:text(party.ragione_sociale),address:text(party.indirizzo),city:text(party.localita),postalCode:text(party.cap),province:text(party.provincia),country:text(party.cod_paese || party.paese_iso)};
+  return partyAddress();
 }
 
 export async function loadOrderContext(client, reference, db, settings) {

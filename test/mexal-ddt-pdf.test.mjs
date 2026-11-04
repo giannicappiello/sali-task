@@ -13,7 +13,7 @@ test('BCF PDF uses the print-only service and rejects invalid references before 
     await client.printMovementPdf(input);
     assert.equal(calls[0].url,'https://mexal.test/webapi/servizi');
     assert.equal(calls[0].binary,true);
-    assert.deepEqual(JSON.parse(calls[0].body),{cmd:'stampa_movimento_magazzino',dati:{...input,cod_modulo:'S'}});
+    assert.deepEqual(JSON.parse(calls[0].body),{cmd:'stampa_movimento_magazzino',dati:{...input,cod_modulo:'F'}});
     await assert.rejects(client.printMovementPdf({...input,cod_modulo:'S'}));
     assert.equal(calls.length,1);
   } finally {names.forEach((n,i)=>{if(before[i]===undefined)delete process.env[n];else process.env[n]=before[i];});}

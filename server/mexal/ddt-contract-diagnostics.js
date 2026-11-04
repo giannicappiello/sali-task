@@ -35,7 +35,7 @@ export async function runDdtContractDiagnostics(client) {
       const pdf = await client.printMovementPdf(document);
       const pages = (await PDFDocument.load(pdf.body)).getPageCount();
       if (!pages) throw new Error('PDF Mexal privo di pagine.');
-      services = { ok:true, endpoint:'/webapi/servizi', command:'stampa_movimento_magazzino', module:'S', reference:`BC+${document.serie}+${document.numero}`, bytes:pdf.body.length, pages, sha256:createHash('sha256').update(pdf.body).digest('hex'),previewPdfBase64:Buffer.from(pdf.body).toString('base64') };
+      services = { ok:true, endpoint:'/webapi/servizi', command:'stampa_movimento_magazzino', module:'F', reference:`BC+${document.serie}+${document.numero}`, bytes:pdf.body.length, pages, sha256:createHash('sha256').update(pdf.body).digest('hex'),previewPdfBase64:Buffer.from(pdf.body).toString('base64') };
     } catch (error) { services = { ok: false, error: error.message }; }
   }
   return {
@@ -46,6 +46,6 @@ export async function runDdtContractDiagnostics(client) {
     services,
     pdfEndpointAdvertised: relevant.some((item) => /pdf/i.test(item.regexp)),
     contractVerified: services?.ok === true,
-    explanation: services?.ok ? "PDF recuperato direttamente con modulo S (Bolla senza Prezzi); escluso F (Stampa Indirizzo). Nessun documento emesso e nessuna configurazione modificata." : "Recupero PDF non verificato. Nessun documento emesso e nessuna configurazione modificata.",
+    explanation: services?.ok ? "PDF BCF recuperato direttamente con modulo F (con prezzi). Nessun documento emesso e nessuna configurazione modificata." : "Recupero PDF non verificato. Nessun documento emesso e nessuna configurazione modificata.",
   };
 }

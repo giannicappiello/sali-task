@@ -110,7 +110,7 @@ export async function shipmentPreview(db, client, row, settings) {
     else recipients.push({email:candidate.email,roles:[candidate.role]});
   }
   const snapshot = {preparationId:row.id, sourceHash:row.source_hash, version:row.version,
-    recipients, recipientWarnings, agentCode, emailCustomers, emailAgents, pdfPath:settings.ddt_pdf_path, pdfPrintModule:'S', packingLayout:'compact-v2', contractEvidence:settings.contract_evidence,
+    recipients, recipientWarnings, agentCode, emailCustomers, emailAgents, pdfPath:settings.ddt_pdf_path, pdfPrintModule:'F', packingLayout:'compact-v2', contractEvidence:settings.contract_evidence,
     subject:settings.email_subject || 'Documenti spedizione {documento}',
     body:settings.email_body || 'In allegato la bolla {documento} e la packing list dell’ordine {ordine}.',
   };

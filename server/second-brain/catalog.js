@@ -1,3 +1,4 @@
+import {readArchivedDdtPdfs} from '../ai/ddt-archive-refresh.js';
 import { randomUUID } from 'node:crypto';
 import { workspaceReadTools } from '../ai/workspace-search.js';
 import { operationalReadTools, canReadModule } from '../ai/operational-read.js';
@@ -49,6 +50,7 @@ export function createBrainCatalog(auth) {
     if(!data)throw Object.assign(new Error('Azione non accessibile.'),{status:404});
     return {action:data,readAt:new Date().toISOString()};
   });
+  if (controlled.DDT_ARCHIVED_PDF_REFRESH) tools.DDT_ARCHIVED_PDFS_READ = read('Legge le bolle archiviate da aggiornare a PDF BC1 con prezzi e gli eventuali blocchi di stampa. Nessuna modifica.',objectSchema(),()=>readArchivedDdtPdfs(auth));
   if (controlled.DDT_PRINT_SETTINGS_UPDATE) tools.DDT_PRINT_SETTINGS_READ = read(
     'Legge configurazione DDT/packing, stampante MAGAZZINO e supporto delle opzioni MES. Nessuna stampa o modifica.',
     objectSchema(),()=>readDdtPrintSettings(auth));

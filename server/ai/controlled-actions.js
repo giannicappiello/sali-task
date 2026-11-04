@@ -1,3 +1,4 @@
+import {ddtArchiveRefreshSchema, previewArchivedDdtRefresh, applyArchivedDdtRefresh} from './ddt-archive-refresh.js';
 import { productionStartSchema as batchStartSchema, productionStartPreview, executeProductionStart } from './production-start.js';
 import { productionStartSchema, productionDatesSchema, productionDateCall } from './production-dates.js';
 /* global Buffer, process */
@@ -66,14 +67,15 @@ const externalEntitySchema = (entityLabel) => ({
 });
 
 export const CONTROLLED_AI_ACTIONS = Object.freeze({
+  DDT_ARCHIVED_PDF_REFRESH: {system:'mes',risk:'write',permission:'integrations.configure',schema:ddtArchiveRefreshSchema,description:'Rigenera solo i PDF delle bolle archiviate selezionate in BC1 con prezzi, preservando gli originali. Nessuna emissione, email o stampa. Richiede conferma umana in Workspace.'},
   DDT_PRINT_SETTINGS_UPDATE: {system:'mes',risk:'write',permission:'integrations.configure',schema:ddtPrintSettingsSchema,
     description:'Imposta solo per nuove stampe DDT e packing per bancale: MAGAZZINO, fronte/retro lato lungo, bianco e nero, vassoio 1. Non stampa documenti.'},
-  MES_PRODUCTION_RESUME_CLOSE: { system: 'mes', risk: 'write', permission: 'progremes.write', schema: resumeClosureSchema, description: 'Riprende una chiusura gi� iniziata dal consuntivo congelato: conserva pesate, quantit� e documenti riusciti. Prima leggere MES_PRODUCTION_CLOSURE_STATE. Non forza qualit� n� presume SL/CL manuali. Verificare nuovamente lo stato dopo esecuzione o timeout.' },
-  MES_PRODUCTION_START: { system: 'mes', risk: 'write', permission: 'progremes.write', schema: batchStartSchema, description: 'Stampa il foglio del batch e avvia solo dopo stampa confermata. Leggere MES_PRODUCTION_START_PREVIEW. Seguire l’esito con MES_PRODUCTION_START_STATUS senza ripetere l’azione.' },
+  MES_PRODUCTION_RESUME_CLOSE: { system: 'mes', risk: 'write', permission: 'progremes.write', schema: resumeClosureSchema, description: 'Riprende una chiusura già iniziata dal consuntivo congelato: conserva pesate, quantità e documenti riusciti. Prima leggere MES_PRODUCTION_CLOSURE_STATE. Non forza qualità né presume SL/CL manuali. Verificare nuovamente lo stato dopo esecuzione o timeout.' },
+  MES_PRODUCTION_START: { system: 'mes', risk: 'write', permission: 'progremes.write', schema: batchStartSchema, description: 'Stampa il foglio del batch e avvia solo dopo stampa confermata. Leggere MES_PRODUCTION_START_PREVIEW. Seguire lâ€™esito con MES_PRODUCTION_START_STATUS senza ripetere lâ€™azione.' },
   MES_PRODUCTION_DATES_CORRECT: {system:'mes',risk:'write',permission:'progremes.write',schema:productionDatesSchema,
-    description:'Rettifica inizio e/o fine effettivi di una fase conclusa. Prima leggere MES_PRODUCTION_DATES_LOOKUP e identificare articolo e fase. I campi non richiesti sono null: conserva gli orari, non inventarli se inizio e fine nello stesso giorno risultano invertiti. L’allineamento presenze richiede autorizzazione esplicita dell’utente. Esporre le presenze riallineate e l’effetto su durate e costi. Conferma e audit obbligatori.'},
+    description:'Rettifica inizio e/o fine effettivi di una fase conclusa. Prima leggere MES_PRODUCTION_DATES_LOOKUP e identificare articolo e fase. I campi non richiesti sono null: conserva gli orari, non inventarli se inizio e fine nello stesso giorno risultano invertiti. Lâ€™allineamento presenze richiede autorizzazione esplicita dellâ€™utente. Esporre le presenze riallineate e lâ€™effetto su durate e costi. Conferma e audit obbligatori.'},
   MES_PRODUCTION_START_CORRECT: {system:'mes',risk:'write',permission:'progremes.write',schema:productionStartSchema,
-    description:'Rettifica solo la data di inizio effettiva di una lavorazione conclusa, conservando orario e fine. Prima leggere MES_PRODUCTION_DATES_LOOKUP. Usa targetId e hash esatti; mostra prima/dopo e motivo. Cambia durate e costi derivati, non quantità o documenti Mexal. Richiede conferma del riepilogo.'},
+    description:'Rettifica solo la data di inizio effettiva di una lavorazione conclusa, conservando orario e fine. Prima leggere MES_PRODUCTION_DATES_LOOKUP. Usa targetId e hash esatti; mostra prima/dopo e motivo. Cambia durate e costi derivati, non quantitÃ  o documenti Mexal. Richiede conferma del riepilogo.'},
   RDP_CREATE: { system: 'mes', risk: 'write', permission: 'rdp.create', schema: rdpCreateSchema,
     description: 'Crea una nuova RdP da OC verificato usando snapshotId di RDP_CREATE_PREVIEW come targetId. Supporta OC con precedente RdP annullata, preservandone lo storico. Non crea OP, lotti o avvii. Esegue il servizio Workspace e il calcolo MES.' },
   MES_PLAN_APPLY: { system: "mes", risk: "destructive", permission: "progremes.write", schema: planningConfirmSchema },
@@ -157,7 +159,7 @@ function canPropose(auth, descriptor) {
     CONTROLLED_AI_ACTIONS.PURCHASE_PROPOSAL_CREATE, CONTROLLED_AI_ACTIONS.MONITOR_RULE_CREATE].includes(descriptor)) return false;
   if (auth.manualPlanning === true) return [CONTROLLED_AI_ACTIONS.MES_PLAN_APPLY, CONTROLLED_AI_ACTIONS.MES_ODL_VERIFY].includes(descriptor);
   const admin = auth.profile?.ruoli?.amministratore_workspace === true;
-  if (descriptor === CONTROLLED_AI_ACTIONS.DDT_PRINT_SETTINGS_UPDATE && !admin) return false;
+  if ([CONTROLLED_AI_ACTIONS.DDT_PRINT_SETTINGS_UPDATE,CONTROLLED_AI_ACTIONS.DDT_ARCHIVED_PDF_REFRESH].includes(descriptor) && !admin) return false;
   const level = String(auth.capabilities?.role_ai_level || (auth.profile?.ruoli?.amministratore_workspace ? "conferma" : "analisi"));
   if (!admin && !["bozza", "conferma"].includes(level)) return false;
   if (descriptor.system === "mes" && auth.capabilities?.progremes !== true) return false;
@@ -194,6 +196,7 @@ export async function proposeControlledAction(auth, tool, input, { correlationId
   }
   if (tool === 'MES_PRODUCTION_START') input = { ...input, evidence: await productionStartPreview(auth, input) };
   if (tool === 'DDT_PRINT_SETTINGS_UPDATE') input = await previewDdtPrintSettings(auth,input);
+  if (tool === 'DDT_ARCHIVED_PDF_REFRESH') input = await previewArchivedDdtRefresh(auth,input);
   if (tool === 'RDP_CREATE') input = await proposeRdpCreation(auth, input);
   if (['ARTICLE_UPDATE', 'ARTICLE_BULK_UPDATE'].includes(tool)) input = await productChangePreview(auth, tool, input);
   if (tool === 'UI_CONFIGURE_VIEW') {
@@ -213,7 +216,7 @@ export async function proposeControlledAction(auth, tool, input, { correlationId
   }
   if (tool === 'FORMULA_CREATE_REVISION') {
     const preview = await formulaCall(auth, 'preview', { input });
-    if (preview.hash !== input.expectedHash) throw new Error('La formula è cambiata: leggere nuovamente la revisione.');
+    if (preview.hash !== input.expectedHash) throw new Error('La formula Ã¨ cambiata: leggere nuovamente la revisione.');
     input = { ...input, evidence: preview };
   }
   if (tool === 'LOT_OVERRIDE') input = assertLotPreview(input, await lotCall(auth, 'result', { previewToken: input.previewToken }));
@@ -261,12 +264,13 @@ function requiredEnvironment(name) {
 }
 
 async function executeExternalAction(auth, pending) {
+  if (pending.tool === 'DDT_ARCHIVED_PDF_REFRESH') return applyArchivedDdtRefresh(auth,pending);
   if (pending.tool === 'DDT_PRINT_SETTINGS_UPDATE') return applyDdtPrintSettings(auth,pending);
   if (pending.tool === 'MES_PRODUCTION_START') return executeProductionStart(auth, pending);
   if (pending.tool === 'RDP_CREATE') {
     let result = {}, failure = null;
     try { result = await executeRdpCreation(auth, pending); }
-    catch (error) { failure = `${error.message} Verificare le RdP dell’OC prima di ripetere la creazione.`; }
+    catch (error) { failure = `${error.message} Verificare le RdP dellâ€™OC prima di ripetere la creazione.`; }
     const { data, error } = await auth.admin.rpc('complete_workspace_external_ai_action', {
       p_proposal_id: pending.id, p_succeeded: !failure, p_result: result, p_error: failure,
     });
@@ -359,7 +363,7 @@ async function executeExternalAction(auth, pending) {
       const verified = await productionDateCall(auth, 'result', {idempotencyKey:pending.idempotency_key});
       if (verified?.applied === true && verified.productionId === pending.payload_summary.targetId) { result=verified; failure=null; }
     } catch { /* No blind retry after an uncertain write. */ }
-    if (failure) failure += ' Verificare l’audit della rettifica MES prima di ripetere.';
+    if (failure) failure += ' Verificare lâ€™audit della rettifica MES prima di ripetere.';
   }
   if (failure && ['FORMULA_CREATE_REVISION', 'MES_RESOURCE_COST_UPDATE', 'MACHINE_INSTRUCTION_DRAFT'].includes(pending.tool)) {
     try {
@@ -393,7 +397,7 @@ export async function decideControlledAction(auth, body) {
   // before any preview, MES request or database mutation, even on a retry.
   if (confirmed && (!canPropose(auth, CONTROLLED_AI_ACTIONS[pending.tool]) ||
       (!auth.manualPlanning && auth.profile?.ruoli?.amministratore_workspace !== true && auth.capabilities?.role_ai_level !== "conferma"))) {
-    throw Object.assign(new Error("Autorizzazione alla conferma non disponibile. La proposta non è stata eseguita."), { status: 403 });
+    throw Object.assign(new Error("Autorizzazione alla conferma non disponibile. La proposta non Ã¨ stata eseguita."), { status: 403 });
   }
   if (confirmed && ["MES_PLAN_APPLY", "MES_ODL_VERIFY"].includes(pending.tool) && pending.status === "proposed")
     assertPlanningConfirmation(pending.payload_summary, await planningCall(auth, "get", { id: pending.payload_summary.targetId }), pending.tool === "MES_ODL_VERIFY");
@@ -410,7 +414,7 @@ export async function decideControlledAction(auth, body) {
   }
   if (confirmed && pending.tool === 'FORMULA_CREATE_REVISION' && pending.status === 'proposed') {
     const preview = await formulaCall(auth, 'preview', { input: pending.payload_summary });
-    if (preview.hash !== pending.payload_summary.expectedHash) throw new Error('La formula è cambiata dopo la proposta. Rigenerare prima di confermare.');
+    if (preview.hash !== pending.payload_summary.expectedHash) throw new Error('La formula Ã¨ cambiata dopo la proposta. Rigenerare prima di confermare.');
   }
   if (confirmed && pending.tool === 'LOT_OVERRIDE' && pending.status === 'proposed') assertLotPreview(pending.payload_summary, await lotCall(auth, 'result', { previewToken: pending.payload_summary.previewToken }));
   if (confirmed && pending.tool === 'MACHINE_INSTRUCTION_DRAFT' && pending.status === 'proposed') await machineCall(auth, 'preview', { input: pending.payload_summary });
@@ -425,8 +429,8 @@ export async function decideControlledAction(auth, body) {
   if (confirmed && action.status === "confirmed" && CONTROLLED_AI_ACTIONS[action.tool].system === "mes") ({ action, failure } = await executeExternalAction(auth, action));
   const answer = action.tool === 'MES_PRODUCTION_START' && action.status === 'confirmed' ? 'Stampa e avvio in elaborazione.' : action.tool === 'RDP_CREATE' && action.status === 'executed'
     ? `RdP ${action.result?.rdpNumber || action.result?.requestId} creata. Stato: ${action.result?.status}. Nessun OP o lotto creato.${action.result?.previewError ? ' Calcolo MES da completare: ' + action.result.previewError.message : ''}`
-    : action.tool === "MES_PRIORITY_REVISE" ? (failure || action.error || action.result?.message || "Proposta rifiutata: nessun trasferimento eseguito.") : action.status === "executed" ? "Operazione applicata e registrata nell’audit."
-    : action.status === "rejected" ? "Proposta rifiutata. Nessuna modifica è stata applicata."
+    : action.tool === "MES_PRIORITY_REVISE" ? (failure || action.error || action.result?.message || "Proposta rifiutata: nessun trasferimento eseguito.") : action.status === "executed" ? "Operazione applicata e registrata nellâ€™audit."
+    : action.status === "rejected" ? "Proposta rifiutata. Nessuna modifica Ã¨ stata applicata."
       : `${action.tool === "MES_MATERIAL_REALLOCATE" ? "Operazione non confermata" : "Operazione non applicata"}. Audit registrato: ${failure || action.error || "connettore non disponibile"}.`;
   return { controlledAction: { id: action.id, tool: action.tool, risk: CONTROLLED_AI_ACTIONS[action.tool].risk, system: action.system, state: action.status, result: action.result, error: failure || action.error || null }, answer };
 }

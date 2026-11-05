@@ -1,10 +1,10 @@
-import { activeDialogs, captureCompleteReport, cloneContent, collectionFor, contentBlocks, exclusiveReportRead, findPagers, tableHeaders, visible } from './capture.js';
+import { activeDialogs, collectionFor, findPagers, tableHeaders, visible } from './capture.js';
 
 const providers = new WeakMap();
 const providerSums = new WeakMap();
 const summaryProviders = new WeakMap();
 export function registerTableSummary(table,getTotals){
- if(!table)return()=>{};summaryProviders.set(table,getTotals);table.dispatchEvent(new CustomEvent('progre:totals-data',{bubbles:true}));
+ if(!table)return()=>{};summaryProviders.set(table,getTotals);table.dispatchEvent(new table.ownerDocument.defaultView.CustomEvent('progre:totals-data',{bubbles:true}));
  return()=>{if(summaryProviders.get(table)===getTotals)summaryProviders.delete(table);};
 }
 const text = node => [...node.childNodes].map(child => child.nodeType === 3 ? child.textContent : text(child)).join(' ').replace(/\s+/g,' ').trim();
@@ -15,7 +15,7 @@ const totalLabel = /^(?:totale|totali|total|grand total|subtotale|somma)(?:\s|$)
 export function registerTableTotals(table, getRows) {
   if (!table) return () => {};
   providers.set(table,getRows);
-  table.dispatchEvent(new CustomEvent('progre:totals-data',{bubbles:true}));
+  table.dispatchEvent(new table.ownerDocument.defaultView.CustomEvent('progre:totals-data',{bubbles:true}));
   return () => { if (providers.get(table) === getRows) providers.delete(table); };
 }
 
@@ -123,87 +123,61 @@ export function appendReportTotals(report) {
   return report;
 }
 
-// Native datasets can supply complete rows without navigating. The fallback
-// reads the same authorized paginated UI with a progress layer, then restores
-// the starting page. No row action, form submission or machine API is invoked.
+// Automatic totals are passive: never navigate the user's lists or lock the UI.
+// Complete totals come only from registered datasets/server summaries. Explicit
+// report exports retain their separate, user-requested pagination capture.
 export function installTableTotals({doc=document}={}) {
-  let timer,stopped=false,reading=false;
-  const cache=new Map();
+  let timer,stopped=false,updating=false,dirty=false;
   const update=async()=>{
-    if(stopped || reading || doc.documentElement.dataset.progreReportReading) {schedule();return;}
-    const root=activeDialogs(doc).at(-1) || doc.querySelector('.content-area,main .content,main');
-    if(!root)return;
-    const allTables=[...root.querySelectorAll('table')];
-    const tables=allTables.filter(visible);
-    const pending=[];
-    const filters=[...root.querySelectorAll('input:not([type=password]):not([type=hidden]),select')].filter(visible).map(node=>[node.name || node.getAttribute('aria-label'),node.value,node.checked]);
-    const route=new URL(doc.location.href);[...route.searchParams.keys()].filter(key=>/page|pagina/i.test(key)).forEach(key=>route.searchParams.delete(key));
-    for(const table of tables){
-      const index=allTables.indexOf(table);
-      if(hasExistingTotals(table))continue;
-      const data=tableData(table), page=sumColumns(data.headers,data.rows);
-      if(!page.some(parts=>parts.length)){table.querySelector('tfoot[data-report-totals]')?.remove();continue;}
-      let footer=table.querySelector('tfoot[data-report-totals]');
-      if(!footer){footer=doc.createElement('tfoot');footer.dataset.reportTotals='';table.append(footer);}
-      const key=JSON.stringify([route.pathname+route.search,root.querySelector('h1,h2,h3')?.textContent,index,data.headers,filters,[...table.querySelectorAll('[aria-sort]')].map(node=>node.getAttribute('aria-sort'))]);
-      const normalized=contentBlocks(cloneContent(table)).find(block=>block.type==='table') || data;
-      const fingerprint=JSON.stringify(normalized.rows);
-      let general;
-      const provider=providers.get(table);
-      const paged=findPagers(root).some(pager=>{
-        try {const collection=collectionFor(pager,root);return collection===table || collection.contains(table) && !table.closest('article');}
-        catch {return true;}
-      });
-      const summary=summaryProviders.get(table);
-      if(summary){try{general=summary(data.headers);}catch(error){footer.title=error.message;}}
-      else if(provider) {
-        try{
-          let cacheByHeader=providerSums.get(provider);
-          if(!cacheByHeader){cacheByHeader=new Map();providerSums.set(provider,cacheByHeader);}
-          const headerKey=JSON.stringify(data.headers);
-          if(!cacheByHeader.has(headerKey))cacheByHeader.set(headerKey,Promise.resolve(provider()).then(rows=>sumColumns(data.headers,rows)));
-          general=await cacheByHeader.get(headerKey);
-        }
-        catch(error){cache.set(key,{totals:null,pages:new Set([fingerprint]),failed:true});footer.title=error.message;}
-      }
-      else if(!paged)general=page;
-      else if(cache.get(key)?.pages.has(fingerprint))general=cache.get(key).totals;
-      else pending.push({key,headers:data.headers,index,fingerprint});
-      const desired=doc.createElement('tfoot');
-      desired.append(footerRow(data.headers,page,'Totale pagina',doc));
-      desired.append(footerRow(data.headers,general || data.headers.map(()=>[]),'Totale generale',doc));
-      if(!general) {
-        [...desired.lastElementChild.children].forEach((cell,i)=>{if(page[i].length)cell.textContent=cache.get(key)?.failed?'Non disponibile':'Calcolo…';});
-      }
-      if(footer.innerHTML!==desired.innerHTML)footer.replaceChildren(...desired.childNodes);
-    }
-    if(!pending.length)return;
-    reading=true;
-    const progress=doc.createElement('div');progress.dataset.reportExport='';progress.className='progre-totals-progress';progress.setAttribute('role','status');progress.textContent='Calcolo dei totali generali…';
-    doc.body.append(progress);
+    if(stopped)return;
+    if(updating){dirty=true;return;}
+    if(doc.documentElement.dataset.progreReportReading){schedule();return;}
+    updating=true;
     try{
-      await exclusiveReportRead(async()=>{
-        const wasInert=root.inert; root.inert=true;root.classList.add('progre-totals-reading');
+      const root=activeDialogs(doc).at(-1) || doc.querySelector('.content-area,main .content,main');
+      if(!root)return;
+      for(const table of [...root.querySelectorAll('table')].filter(visible)){
+        if(hasExistingTotals(table))continue;
+        const data=tableData(table), page=sumColumns(data.headers,data.rows);
+        if(!page.some(parts=>parts.length)){table.querySelector('tfoot[data-report-totals]')?.remove();continue;}
+        let general,errorMessage='';
+        const provider=providers.get(table), summary=summaryProviders.get(table);
+        const paged=findPagers(root).some(pager=>{
+          try {const collection=collectionFor(pager,root);return collection===table || collection.contains(table) && !table.closest('article');}
+          catch {return true;}
+        });
         try{
-          const report=await captureCompleteReport({root,title:'Totali',progress:value=>{progress.textContent=`Calcolo totali · ${value}`;}});
-          for(const request of pending){
-            const blocks=report.blocks.filter(block=>block.type==='table' && block.key===String(request.index));
-            if(!blocks.length)continue;
-            // The capture omits action columns. Align by the original header.
-            const rows=blocks.flatMap(block=>block.rows.map(row=>request.headers.map(header=>row[block.headers.indexOf(header)] ?? '')));
-            cache.set(request.key,{totals:sumColumns(request.headers,rows),pages:new Set([request.fingerprint,...blocks.map(block=>JSON.stringify(block.rows))])});
+          if(summary)general=summary(data.headers);
+          else if(provider){
+            let cacheByHeader=providerSums.get(provider);
+            if(!cacheByHeader){cacheByHeader=new Map();providerSums.set(provider,cacheByHeader);}
+            const headerKey=JSON.stringify(data.headers);
+            if(!cacheByHeader.has(headerKey))cacheByHeader.set(headerKey,Promise.resolve(provider()).then(rows=>sumColumns(data.headers,rows)));
+            general=await cacheByHeader.get(headerKey);
           }
-        }finally{root.inert=wasInert;root.classList.remove('progre-totals-reading');}
-      },doc);
-    }catch(error){
-      for(const table of tables)for(const cell of table.querySelectorAll('[data-report-totals] td'))if(cell.textContent==='Calcolo…'){cell.textContent='Non disponibile';cell.title=error.message;}
-      // A failed read is retried after a real data change, not in a tight loop.
-      for(const request of pending)cache.set(request.key,{totals:null,pages:new Set([request.fingerprint]),failed:true});
-    }finally{reading=false;progress.remove();schedule();}
+          else if(!paged)general=page;
+        }catch(error){errorMessage=error.message;}
+        // A dataset may resolve after navigation, closure or a provider change.
+        if(stopped || !table.isConnected)continue;
+        if(provider!==providers.get(table) || summary!==summaryProviders.get(table)){dirty=true;continue;}
+        let footer=table.querySelector('tfoot[data-report-totals]');
+        if(!footer){footer=doc.createElement('tfoot');footer.dataset.reportTotals='';table.append(footer);}
+        footer.title=errorMessage || (!general?'Totale generale disponibile nei dettagli o nell’esportazione completa.':'');
+        const desired=doc.createElement('tfoot');
+        desired.append(footerRow(data.headers,page,'Totale pagina',doc));
+        desired.append(footerRow(data.headers,general || data.headers.map(()=>[]),'Totale generale',doc));
+        if(!general)[...desired.lastElementChild.children].forEach((cell,i)=>{if(page[i].length)cell.textContent='Non disponibile';});
+        if(footer.innerHTML!==desired.innerHTML)footer.replaceChildren(...desired.childNodes);
+      }
+    }finally{updating=false;if(dirty){dirty=false;schedule();}}
   };
   function schedule(){if(stopped)return;clearTimeout(timer);timer=setTimeout(()=>{void update();},700);}
-  const observer=new MutationObserver(records=>{
-    if(records.every(record=>record.target.closest?.('[data-report-totals],[data-report-export]')))return;
+  const internal=node=>{
+    const element=node.nodeType===1?node:node.parentElement;
+    return !!element?.closest('[data-report-totals],[data-report-export]');
+  };
+  const observer=new doc.defaultView.MutationObserver(records=>{
+    if(records.every(record=>internal(record.target) || (record.type==='childList' && [...record.addedNodes,...record.removedNodes].length>0 && [...record.addedNodes,...record.removedNodes].every(internal))))return;
     schedule();
   });
   observer.observe(doc.body,{childList:true,subtree:true,attributes:true,attributeFilter:['hidden','aria-hidden','aria-sort','open']});

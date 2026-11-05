@@ -14,7 +14,7 @@ import {
 } from "./cameraSettings.js";
 
 function CameraSession({ onRead, onResolve, onClose, paused, onRestart, contextLabel,
-  mode="piece",onModeChange,pallets=[],activePallet,onPalletChange,packages=[],activePackage,onPackageChange,onNewPallet,onNewPackage,cartonPrompt,cartonPieces,onCartonPieces,unitWeight,onUnitWeight,onSaveCarton,onCancelCarton }) {
+  mode="piece",onModeChange,pallets=[],activePallet,onPalletChange,packages=[],activePackage,onPackageChange,onNewPallet,onNewPackage,cartonPrompt,cartonPieces,onCartonPieces,palletBoxes,onPalletBoxes,unitWeight,onUnitWeight,onSaveCarton,onCancelCarton }) {
   const dialog = useRef(null),
     video = useRef(null),
     decoder = useRef(null),
@@ -128,7 +128,7 @@ function CameraSession({ onRead, onResolve, onClose, paused, onRestart, contextL
             `${scan.code}: +${scan.quantity} ${scan.quantity === 1 ? "pezzo" : "pezzi"}`,
           );
         }
-      } else if (!result?.requiresCartonPieces && !result?.requiresProductWeight)
+      } else if (!result?.requiresCartonPieces && !result?.requiresProductWeight && !result?.requiresPalletBoxes)
         setError("Lettura non confermata: controlla il riepilogo.");
   }
   async function saveCarton(){
@@ -392,10 +392,10 @@ function CameraSession({ onRead, onResolve, onClose, paused, onRestart, contextL
               <button type="submit" disabled={!manual.trim() || busy || paused || !!cartonPrompt}>Cerca</button>
             </form>
             {captured && <div className="op-camera-confirmation">
-              <div className="op-camera-product" role="status">{resolving ? "Ricerca prodotto…" : product ? <><strong>{product.code} · {product.description}</strong><small>{product.excluded ? "Riga informativa: non richiede imballo" : mode==="piece" ? "1 pezzo" : mode === "pallet" ? (product.piecesPerCarton && product.boxesPerPallet ? `${product.boxesPerPallet} colli × ${product.piecesPerCarton} pezzi = ${product.boxesPerPallet * product.piecesPerCarton} pezzi/bancale` : "Completa colli per bancale e pezzi per collo nel capitolato") : product.piecesPerCarton ? `${product.piecesPerCarton} pezzi per cartone` : "Pezzi per cartone da compilare nel capitolato"}</small>{product.wrong && <small className="op-bad">Prodotto non previsto nell’ordine</small>}</> : "Prodotto non identificato"}</div>
+              <div className="op-camera-product" role="status">{resolving ? "Ricerca prodotto…" : product ? <><strong>{product.code} · {product.description}</strong><small>{product.excluded ? "Riga informativa: non richiede imballo" : mode==="piece" ? "1 pezzo" : mode === "pallet" ? (product.piecesPerCarton && product.boxesPerPallet ? `${product.boxesPerPallet} colli × ${product.piecesPerCarton} pezzi = ${product.boxesPerPallet * product.piecesPerCarton} pezzi/bancale` : "Completa qui i dati mancanti alla conferma della lettura") : product.piecesPerCarton ? `${product.piecesPerCarton} pezzi per cartone` : "Pezzi per cartone da compilare nel capitolato"}</small>{product.wrong && <small className="op-bad">Prodotto non previsto nell’ordine</small>}</> : "Prodotto non identificato"}</div>
               <button type="button" disabled={busy || paused || !!cartonPrompt} onClick={resetCode}>Rileggi</button>
             </div>}
-            {cartonPrompt && <PreparationProductPrompt prompt={cartonPrompt} pieces={cartonPieces} onPieces={onCartonPieces} weight={unitWeight} onWeight={onUnitWeight} busy={busy || paused} onCancel={onCancelCarton} onSave={saveCarton}/>}
+            {cartonPrompt && <PreparationProductPrompt prompt={cartonPrompt} pieces={cartonPieces} onPieces={onCartonPieces} weight={unitWeight} onWeight={onUnitWeight} boxes={palletBoxes} onBoxes={onPalletBoxes} busy={busy || paused} onCancel={onCancelCarton} onSave={saveCarton}/>}
           {error && (
             <p className="op-camera-error" role="alert">
               {error}

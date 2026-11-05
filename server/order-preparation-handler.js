@@ -261,6 +261,7 @@ async function barcodeProduct(db, barcode, source) {
     boxesPerPallet: null,
     packagingSpecificationVersion: null,
     packagingSpecificationEmpty: true,
+    palletSpecificationEmpty: true,
     unitWeightGrams: null,
     weightSpecificationEmpty: true,
     ...packaging.get(code),
@@ -764,17 +765,19 @@ export function createOrderPreparationHandler({
         const ordered = row.source.lines.some(line => line.code === product.code);
         const needsPieces = body.mode !== "piece" && !product.piecesPerCarton;
         const needsWeight = ordered && !product.unitWeightGrams;
-        if (body.mode === 'pallet') assert(product.boxesPerPallet, 'Compila Colli per bancale nel capitolato prima della lettura.');
-        if(needsPieces || needsWeight) {
+        const needsBoxes = body.mode === 'pallet' && !product.boxesPerPallet;
+        if(needsPieces || needsWeight || needsBoxes) {
           assert(ordered,"Prodotto non previsto nell'ordine: non è possibile compilare il capitolato da questa lettura.");
           assert(!needsPieces || product.packagingSpecificationEmpty, `Pezzi per cartone di ${product.code} non validi: correggi il capitolato prodotto.`);
           assert(!needsWeight || product.weightSpecificationEmpty, `Peso Totale in grammi di ${product.code} non valido: correggi il capitolato prodotto.`);
-          if((needsPieces && (body.piecesPerCarton == null || body.piecesPerCarton === "")) || (needsWeight && (body.unitWeightGrams == null || body.unitWeightGrams === ""))) return res.status(200).json({
-            requiresCartonPieces:needsPieces,requiresProductWeight:needsWeight,product:{code:product.code},
+          assert(!needsBoxes || product.palletSpecificationEmpty, `Colli per bancale di ${product.code} non validi: correggi il capitolato prodotto.`);
+          if((needsPieces && (body.piecesPerCarton == null || body.piecesPerCarton === "")) || (needsWeight && (body.unitWeightGrams == null || body.unitWeightGrams === "")) || (needsBoxes && (body.boxesPerPallet == null || body.boxesPerPallet === ""))) return res.status(200).json({
+            requiresCartonPieces:needsPieces,requiresProductWeight:needsWeight,requiresPalletBoxes:needsBoxes,product:{code:product.code},
           });
           Object.assign(product,await saveMissingPreparationPackaging(db,product.code,{
             ...(needsPieces?{piecesPerCarton:body.piecesPerCarton}:{}),
             ...(needsWeight?{unitWeightGrams:body.unitWeightGrams}:{}),
+            ...(needsBoxes?{boxesPerPallet:body.boxesPerPallet}:{}),
           },profile.id));
         }
 

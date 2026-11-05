@@ -266,6 +266,7 @@ export default function OrderPreparation() {
     [notice, setNotice] = useState(""),
     [cartonPrompt, setCartonPrompt] = useState(null),
     [cartonPieces, setCartonPieces] = useState(""),
+    [palletBoxes, setPalletBoxes] = useState(""),
     [unitWeight, setUnitWeight] = useState(""),
     [packingPreview,setPackingPreview] = useState(null),
     [dispatchPreview,setDispatchPreview] = useState(null),
@@ -415,9 +416,9 @@ export default function OrderPreparation() {
       if(response.deletionPreview) setDeletionPreview(response.deletionPreview);
       if(response.deletedReference) {setDeletionPreview(null);setNotice("Bolla eliminata in Mexal. Scansioni e imballi conservati: ripeti il riscontro prima di emettere la nuova BCF.");}
       setPending(null);
-      if (response.requiresCartonPieces || response.requiresProductWeight) {
-        setCartonPrompt({ code: response.product.code, body, operation, needsPieces:!!response.requiresCartonPieces, needsWeight:!!response.requiresProductWeight });
-        setCartonPieces("");setUnitWeight("");
+      if (response.requiresCartonPieces || response.requiresProductWeight || response.requiresPalletBoxes) {
+        setCartonPrompt({ code: response.product.code, body, operation, needsPieces:!!response.requiresCartonPieces, needsWeight:!!response.requiresProductWeight, needsBoxes:!!response.requiresPalletBoxes });
+        setCartonPieces("");setUnitWeight("");setPalletBoxes("");
         return response;
       }
       if (["scan","verify","preview_packing_list"].includes(operation) && response.preparation) setCartonPrompt(null);
@@ -540,7 +541,7 @@ export default function OrderPreparation() {
         ? { createPackage: true, palletId: draftPackage.palletId }
         : {}),
     });
-    if (!camera && !response?.requiresCartonPieces) input.current?.focus();
+    if (!camera && !response?.requiresCartonPieces && !response?.requiresPalletBoxes && !response?.requiresProductWeight) input.current?.focus();
     return response;
   };
 
@@ -1283,15 +1284,15 @@ export default function OrderPreparation() {
           </section>
 
 
-          {cartonPrompt && !camera && <PreparationProductPrompt modal error={error} prompt={cartonPrompt} pieces={cartonPieces} onPieces={setCartonPieces} weight={unitWeight} onWeight={setUnitWeight} busy={busy} onCancel={()=>setCartonPrompt(null)} onSave={()=>perform(cartonPrompt.operation,{},{...cartonPrompt.body,productCode:cartonPrompt.code,...(cartonPrompt.needsPieces?{piecesPerCarton:Number(cartonPieces)}:{}),...(cartonPrompt.needsWeight?{unitWeightGrams:unitWeight}:{})})}/>}
+          {cartonPrompt && !camera && <PreparationProductPrompt modal error={error} prompt={cartonPrompt} pieces={cartonPieces} onPieces={setCartonPieces} weight={unitWeight} onWeight={setUnitWeight} boxes={palletBoxes} onBoxes={setPalletBoxes} busy={busy} onCancel={()=>setCartonPrompt(null)} onSave={()=>perform(cartonPrompt.operation,{},{...cartonPrompt.body,productCode:cartonPrompt.code,...(cartonPrompt.needsPieces?{piecesPerCarton:Number(cartonPieces)}:{}),...(cartonPrompt.needsWeight?{unitWeightGrams:unitWeight}:{}),...(cartonPrompt.needsBoxes?{boxesPerPallet:Number(palletBoxes)}:{})})}/>}
           {editable && <BarcodeCamera
             enabled={camera}
             onRead={scan}
             onResolve={async barcode=>(await preparationApi("resolve_product",{id:row.id,barcode})).product}
             onClose={()=>setCamera(false)}
             paused={busy || !!pending}
-            cartonPrompt={cartonPrompt} cartonPieces={cartonPieces} onCartonPieces={setCartonPieces} unitWeight={unitWeight} onUnitWeight={setUnitWeight}
-            onSaveCarton={()=>perform(cartonPrompt.operation,{},{...cartonPrompt.body,productCode:cartonPrompt.code,...(cartonPrompt.needsPieces?{piecesPerCarton:Number(cartonPieces)}:{}),...(cartonPrompt.needsWeight?{unitWeightGrams:unitWeight}:{})})}
+            palletBoxes={palletBoxes} onPalletBoxes={setPalletBoxes} cartonPrompt={cartonPrompt} cartonPieces={cartonPieces} onCartonPieces={setCartonPieces} unitWeight={unitWeight} onUnitWeight={setUnitWeight}
+            onSaveCarton={()=>perform(cartonPrompt.operation,{},{...cartonPrompt.body,productCode:cartonPrompt.code,...(cartonPrompt.needsPieces?{piecesPerCarton:Number(cartonPieces)}:{}),...(cartonPrompt.needsWeight?{unitWeightGrams:unitWeight}:{}),...(cartonPrompt.needsBoxes?{boxesPerPallet:Number(palletBoxes)}:{})})}
             onCancelCarton={()=>setCartonPrompt(null)}
             mode={mode} onModeChange={setMode}
             pallets={pallets} activePallet={activePallet} onPalletChange={id=>choosePallet(pallets.find(item=>item.id===id))}

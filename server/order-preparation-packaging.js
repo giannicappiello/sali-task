@@ -3,6 +3,7 @@ import { assert, integer } from "../shared/orderPreparation.js";
 import { articleType } from "./private-documents-store.js";
 import { checked } from "./order-preparation-auth.js";
 import { specificationPiecesPerBox } from "./mes-packaging-specification.js";
+import { validateSpecification } from "./product-specifications.js";
 
 // Read only the packaging quantity, never expose other private specification fields.
 export async function preparationPackaging(db, codes) {
@@ -22,6 +23,7 @@ export async function preparationPackaging(db, codes) {
         {
           piecesPerCarton: pieces && pieces <= 1000000 ? pieces : null,
           boxesPerPallet: specificationPiecesPerBox(spec.boxes_per_pallet) <= 2000 ? specificationPiecesPerBox(spec.boxes_per_pallet) : null,
+          palletSpecificationEmpty: String(spec.boxes_per_pallet ?? "").trim() === "",
           unitWeightGrams: productWeightGrams(spec.unit_weight_grams),
           weightSpecificationEmpty: String(spec.unit_weight_grams ?? "").trim() === "",
           packagingSpecificationVersion: spec.version,
@@ -38,6 +40,7 @@ export async function preparationPackaging(db, codes) {
 export async function saveMissingPreparationPackaging(db, code, input, actor) {
   const requested = typeof input === "object" ? input : {piecesPerCarton: input};
   const pieces = requested.piecesPerCarton == null ? null : integer(requested.piecesPerCarton, "Pezzi per cartone");
+  const boxes = requested.boxesPerPallet == null ? null : integer(requested.boxesPerPallet, "Colli per bancale", 1, 2000);
   const weight = requested.unitWeightGrams == null ? null : productWeightGrams(requested.unitWeightGrams);
   assert(requested.unitWeightGrams == null || weight, "Peso Totale in grammi non valido.");
   const catalog = checked(
@@ -61,6 +64,8 @@ export async function saveMissingPreparationPackaging(db, code, input, actor) {
   );
   const current = specificationPiecesPerBox(saved?.data?.piecesPerBox);
   const currentWeight = productWeightGrams(saved?.data?.totalWeightGrams);
+  const parsedBoxes = specificationPiecesPerBox(saved?.data?.boxesPerPallet);
+  const currentBoxes = parsedBoxes && parsedBoxes <= 2000 ? parsedBoxes : null;
   const data = { ...(saved?.data || {}) };
   if(pieces && !current) {
     assert(String(data.piecesPerBox ?? "").trim() === "", "Il capitolato contiene pezzi per cartone non validi: correggilo in Documenti Private.");
@@ -70,8 +75,13 @@ export async function saveMissingPreparationPackaging(db, code, input, actor) {
     assert(String(data.totalWeightGrams ?? "").trim() === "", "Il capitolato contiene un peso non valido: correggilo in Documenti Private.");
     data.totalWeightGrams = String(weight);
   }
+  if(boxes && !currentBoxes) {
+    assert(String(data.boxesPerPallet ?? "").trim() === "", "Il capitolato contiene colli per bancale non validi: correggilo in Documenti Private.");
+    data.boxesPerPallet = String(boxes);
+    validateSpecification({expectedVersion:saved?.version || 0,data,attachments:saved?.attachments || []});
+  }
   if(JSON.stringify(data) === JSON.stringify(saved?.data || {})) return {
-    piecesPerCarton: current, unitWeightGrams: currentWeight, packagingSpecificationVersion: saved?.version || 0,
+    piecesPerCarton: current, boxesPerPallet:currentBoxes, unitWeightGrams: currentWeight, packagingSpecificationVersion: saved?.version || 0,
   };
   delete data.approvedBy;
   delete data.approvedAt;
@@ -94,6 +104,7 @@ export async function saveMissingPreparationPackaging(db, code, input, actor) {
   const updated = checked(result);
   return {
     piecesPerCarton: current || pieces,
+    boxesPerPallet: currentBoxes || boxes,
     unitWeightGrams: currentWeight || weight,
     packagingSpecificationVersion: updated.version,
   };

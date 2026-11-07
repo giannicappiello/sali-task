@@ -14,7 +14,7 @@ async function composeWorkspacePdf(input) {
 const PAGE = { width: 210, height: 297, left: 7, right: 203, top: 7, bottom: 290 };
 // The Workspace reference ends at y=90.  Keep a deliberate gutter before the
 // article header so it can never occupy an article-table column.
-const ARTICLE = { top: 94, bottom: 210, header: 6, row: 8 };
+const ARTICLE = { top: 94, bottom: 210, continuationTop: 29, continuationBottom: 260, header: 6, row: 6.5 };
 const COLS = [7, 31, 101, 111, 123, 143, 164, 181, 203];
 const PH_COLS = [7, 31, 91, 101, 113, 131, 149, 168, 185, 203];
 const RULE = [54, 54, 54];
@@ -244,9 +244,11 @@ function discountRows(lineItem) {
 
 function drawArticleRow(doc, lineItem, y, { showBarcode = false, showDiscountedUnitPrice = false } = {}) {
   const cols = showDiscountedUnitPrice ? PH_COLS : COLS;
-  normal(doc, lineItem.codice_articolo || lineItem.codice || "", cols[0] + 1, y + 3.1, { maxWidth: cols[1] - cols[0] - 2 });
-  if (showBarcode) normal(doc, lineItem.ean || "", cols[0] + 1, y + 6.5, { maxWidth: cols[1] - cols[0] - 2 });
-  normal(doc, lineItem.descrizione || lineItem.nome || "", cols[1] + 1, y + 3.2, { maxWidth: cols[2] - cols[1] - 3 });
+  normal(doc, lineItem.codice_articolo || lineItem.codice || "", cols[0] + 1, y + (showBarcode ? 2.5 : 3.1), { maxWidth: cols[1] - cols[0] - 2 });
+  if (showBarcode) normal(doc, lineItem.ean || "", cols[0] + 1, y + 5.4, { maxWidth: cols[1] - cols[0] - 2 });
+  fitTextInCell(doc, lineItem.descrizione || lineItem.nome || "", cols[1] + 1, y + 0.35, cols[2] - cols[1] - 3, ARTICLE.row - 0.7, {
+    fontSize: 7.4, minFontSize: 6.4, maxLines: 2, lineHeight: 1.05,
+  });
   normal(doc, lineItem.unita_misura || "", (cols[2] + cols[3]) / 2, y + 4.5, { align: "center" });
   normal(doc, quantity(lineItem.quantita), cols[4] - 1, y + 4.5, { align: "right" });
   normal(doc, money(lineItem.prezzo_listino), cols[5] - 1, y + 4.5, { align: "right" });
@@ -259,7 +261,7 @@ function drawArticleRow(doc, lineItem, y, { showBarcode = false, showDiscountedU
     doc,
     discount,
     (cols[amountEnd] + cols[amountEnd + 1]) / 2,
-    y + 1.5 + index * 3.2,
+    y + (discounts.length > 1 ? 0.2 + index * 2.8 : 1.5),
     cols[amountEnd + 1] - cols[amountEnd] - 3,
     3.1,
     { align: "center", fontSize: 7.1, minFontSize: 5.8, maxLines: 1 },
@@ -277,7 +279,7 @@ function drawArticleRow(doc, lineItem, y, { showBarcode = false, showDiscountedU
 }
 
 function drawFooter(doc, order, model) {
-  const y = 210; const totalsX = 156; const totalsW = 47;
+  const y = ARTICLE.bottom; const totalsX = 156; const totalsW = 47;
   const totalCell = (top, height, label, amount, options = {}) => cell(doc, totalsX, top, totalsW, height, label, amount, {
     shaded: true, align: "right", paddingRight: 2.2, fontSize: 8, ...options,
   });
@@ -334,14 +336,21 @@ export async function createOrderPdf(order, lines, { logo = null, document = nul
       ? await getAnalysisReportLogo()
       : await getCompanyLogo()
     : logo;
-  const firstCapacity = Math.floor((ARTICLE.bottom - ARTICLE.top - ARTICLE.header) / ARTICLE.row);
-  const continuationCapacity = Math.floor((260 - 29 - ARTICLE.header) / ARTICLE.row);
+  const rowCapacity = (top, bottom) => Math.floor((bottom - top - ARTICLE.header) / ARTICLE.row);
+  const lastContinuationCapacity = rowCapacity(ARTICLE.continuationTop, ARTICLE.bottom);
   const pageRows = [];
   let offset = 0;
   do {
-    const capacity = pageRows.length ? continuationCapacity : firstCapacity;
-    pageRows.push(model.lines.slice(offset, offset + capacity));
-    offset += capacity;
+    const top = pageRows.length ? ARTICLE.continuationTop : ARTICLE.top;
+    const remaining = model.lines.length - offset;
+    // The final page always reserves the full totals/logistics/signatures block.
+    const isLastPage = remaining <= rowCapacity(top, ARTICLE.bottom);
+    const fullCapacity = rowCapacity(top, ARTICLE.continuationBottom);
+    // Balance the final two pages when possible, without adding empty pages.
+    const count = isLastPage ? remaining : remaining <= fullCapacity + lastContinuationCapacity
+      ? Math.min(fullCapacity, Math.max(Math.ceil(remaining / 2), remaining - lastContinuationCapacity)) : fullCapacity;
+    pageRows.push({ top, bottom: isLastPage ? ARTICLE.bottom : ARTICLE.continuationBottom, lines: model.lines.slice(offset, offset + count) });
+    offset += count;
   } while (offset < model.lines.length);
   const pages = pageRows.length;
   for (let page = 0; page < pages; page += 1) {
@@ -349,11 +358,9 @@ export async function createOrderPdf(order, lines, { logo = null, document = nul
     const continuation = page > 0;
     if (isPhOrder || !managedLetterhead) drawCompanyHeader(doc, companyLogo, continuation, isPhOrder);
     if (!continuation) drawPartyBlock(doc, order, model);
-    const articleTop = continuation ? 29 : ARTICLE.top;
-    const articleBottom = continuation ? 260 : ARTICLE.bottom;
+    const { top: articleTop, bottom: articleBottom, lines: articleLines } = pageRows[page];
     drawArticleGrid(doc, articleTop, articleBottom, { showBarcode: isPhOrder, showDiscountedUnitPrice: isPhOrder });
-    const capacity = Math.floor((articleBottom - articleTop - ARTICLE.header) / ARTICLE.row);
-    pageRows[page].slice(0, capacity).forEach((lineItem, index) => drawArticleRow(doc, lineItem, articleTop + ARTICLE.header + index * ARTICLE.row, { showBarcode: isPhOrder, showDiscountedUnitPrice: isPhOrder }));
+    articleLines.forEach((lineItem, index) => drawArticleRow(doc, lineItem, articleTop + ARTICLE.header + index * ARTICLE.row, { showBarcode: isPhOrder, showDiscountedUnitPrice: isPhOrder }));
     normal(doc, `${page + 1}/${pages}`, 201, continuation ? 25 : 78, { align: "right" });
     if (page === pages - 1) drawFooter(doc, order, model);
   }

@@ -108,9 +108,9 @@ test("la stampa PH recupera dall'anagrafica il barcode mancante senza sovrascriv
 
 test("il riferimento Workspace termina prima della tabella articoli", async () => {
   const source = await readFile(new URL("../src/modules/orders/services/orderPdf.js", import.meta.url), "utf8");
-  assert.match(source, /const ARTICLE = \{ top: 94, bottom: 210, header: 6, row: 8 \}/);
+  assert.match(source, /const ARTICLE = \{ top: 94, bottom: 210,/);
   assert.match(source, /y \+ 48, right - mid, 10, "Riferimento Workspace"/);
-  assert.match(source, /const articleTop = continuation \? 29 : ARTICLE\.top/);
+  assert.match(source, /const top = pageRows\.length \? ARTICLE\.continuationTop : ARTICLE\.top/);
 });
 
 test("i documenti OCM e OCX mantengono serie e numero distinti", async () => {

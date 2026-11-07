@@ -1,0 +1,139 @@
+import { Buffer } from 'node:buffer';
+import { createHash,randomUUID } from 'node:crypto';
+import { PDFDocument } from 'pdf-lib';
+import { waitUntil } from '@vercel/functions';
+import { AGENTS,POLICY_HASH,MAX_PDF_BYTES,REPORT_AGENT,must,requireThat,resolveRecipients,buildDeliveries,buildReportManifest,recipientsFingerprint,reportPeriod,unsealToken } from './commercial-policy.js';
+
+export async function loadReportRecipients(db) {
+  const agents=must(await db.from('mexal_agenti').select('codice,email,attivo_mexal,workspace_utente_id,responsabile_utente_id').in('codice',AGENTS.map(a=>a.code)))||[];
+  const ids=[...new Set(agents.flatMap(a=>[a.workspace_utente_id,a.responsabile_utente_id]).filter(Boolean))];
+  let users=ids.length?must(await db.from('utenti').select('id,nome,cognome,email,attivo,responsabile_utente_id').in('id',ids)):[];
+  const missing=[...new Set(users.map(u=>u.responsabile_utente_id).filter(id=>id&&!ids.includes(id)))];
+  if(missing.length)users=[...users,...must(await db.from('utenti').select('id,nome,cognome,email,attivo,responsabile_utente_id').in('id',missing))];
+  return resolveRecipients(agents,users);
+}
+export async function reportSettings(db) {
+  return must(await db.from('commercial_report_settings').select('*').eq('singleton',true).maybeSingle());
+}
+export async function assertOwner(db,ownerId) {
+  const owner=must(await db.from('utenti').select('id,attivo,ruoli(amministratore_workspace)').eq('id',ownerId).maybeSingle());
+  requireThat(owner?.attivo===true&&owner.ruoli?.amministratore_workspace===true,'Il titolare del piano non è più autorizzato.',403);
+}
+export async function workerReady(fetchImpl=fetch) {
+  const url=globalThis.process.env.ARUBA_EMAIL_WORKER_URL,secret=globalThis.process.env.ARUBA_EMAIL_WORKER_SECRET;
+  requireThat(url&&secret,'Servizio email Workspace non configurato.',503);
+  const probe=new URL(url);probe.searchParams.set('action','report_capabilities');
+  // GET is essential: the old worker treats any unknown POST action as 'run'.
+  // Old versions return 405 for GET without ever consuming real order emails.
+  const r=await fetchImpl(probe.toString(),{method:'GET',headers:{'X-Progre-Worker-Secret':secret},signal:AbortSignal.timeout(15000)});
+  const result=await r.json();
+  requireThat(r.ok&&result.report_protocol===1&&result.queue_enabled===true,'Aggiornare il worker email Workspace al protocollo report prima di attivare.',503);
+  return {ready:true,from:result.from_email};
+}
+export async function dispatchCommercialReports(fetchImpl=fetch) {
+  await workerReady(fetchImpl);
+  const response=await fetchImpl(globalThis.process.env.ARUBA_EMAIL_WORKER_URL,{method:'POST',headers:{'Content-Type':'application/json','X-Progre-Worker-Secret':globalThis.process.env.ARUBA_EMAIL_WORKER_SECRET},body:JSON.stringify({action:'run_reports'}),signal:AbortSignal.timeout(300000)});
+  const result=await response.json();
+  requireThat(response.ok&&result.status==='ok','Invio report da verificare nel registro. Non ripetere invii incerti.',502);
+  return {status:'dispatch_completed',results:result.results};
+}
+export function triggerPrompt(batch) {
+  return `Esegui il lotto report commerciali autorizzato ${batch.id}, mese ${batch.period}, titolare Workspace corrente. Leggi COMMERCIAL_REPORT_PLAN e usa ESATTAMENTE il manifest di questo lotto. Genera i 14 PDF individuali, i consolidati dei gruppi PR e PH e gli eventuali consolidati dei responsabili richiesti dal manifest. Riutilizza i dati verificati dei singoli agenti: clienti distinti e documenti senza duplicazioni, percentuali ricalcolate sui totali, mai medie di percentuali; per ogni consolidato aggiungi classifica agenti per valore, quota, crescita, clienti attivi, copertura portafoglio, valore medio e tasso di riacquisto; grafici di contributo agenti e matrice prodotti per agente. Applica la skill progre-ai, template originale e almeno i 7 grafici approvati. Professional usa fatture; Farmacie usa ordiniph. Per i dettagli usa COMMERCIAL_REPORT_DATA con paginazione completa e CRM_CUSTOMER_SEARCH per i riepiloghi clienti. Non usare campioni globali. Dopo aver verificato tutte le pagine carica ogni PDF con COMMERCIAL_REPORT_ARTIFACT, artifactKey dal manifest: base64 a blocchi di massimo 40000 caratteri numerati da 0, poi finalizza con sha256, fonte, rete, mese e verified=true. Il servizio invia a ciascun responsabile soltanto i report della sua squadra; alle due caselle centrali entrambi i consolidati e tutti gli individuali. Non inviare con altri strumenti. Nessun pagamento/provvigione, appendice fonti/metodi o richiamo separato al CrioGel. Se mancano dati o strumenti, fermati e segnala il limite. Agente ChatGPT previsto: ${REPORT_AGENT}. Manifest: ${JSON.stringify(batch.manifest)}.`;
+}
+export async function triggerMonthlyReports(db,{now=new Date(),fetchImpl=fetch,secret=globalThis.process.env.SUPABASE_SERVICE_ROLE_KEY}={}) {
+  const timing=reportPeriod(now),settings=await reportSettings(db);
+  if(!timing.due||!settings?.enabled)return {status:'not_due'};
+  requireThat(settings.policy_hash===POLICY_HASH,'Il piano richiede nuova approvazione.',409);
+  await assertOwner(db,settings.owner_id);const recipients=await loadReportRecipients(db);await workerReady(fetchImpl);
+  const previous=must(await db.from('commercial_report_batches').select('id,status').eq('period',timing.period).maybeSingle());
+  if(previous) {
+    if(timing.deliveryDue&&previous.status==='queued')return {status:'dispatch_requested',dispatch:await dispatchCommercialReports(fetchImpl)};
+    return {status:'already_triggered',batchId:previous.id,batchStatus:previous.status};
+  }
+  const batch={id:randomUUID(),period:timing.period,owner_id:settings.owner_id,policy_hash:POLICY_HASH,status:'triggering',manifest:buildReportManifest(recipients).targets,recipients_hash:recipientsFingerprint(recipients)};
+  const inserted=await db.from('commercial_report_batches').insert(batch);
+  if(inserted.error?.code==='23505')return {status:'already_triggered'};
+  must(inserted);
+  // Never retry ambiguously accepted triggers. Same explicit key is safe if inspected manually.
+  try {
+    const response=await fetchImpl(`https://api.chatgpt.com/v1/workspace_agents/${settings.trigger_id}/trigger`,{
+      method:'POST',headers:{Authorization:'Bearer '+unsealToken(settings.token_encrypted,secret,settings.owner_id),'Content-Type':'application/json','Idempotency-Key':'progre-commercial-'+batch.period,'OpenAI-Beta':'workspace_agent_runs=v1'},
+      body:JSON.stringify({conversation_key:'progre-commercial-'+batch.period,input:triggerPrompt(batch)}),signal:AbortSignal.timeout(25000),
+    });
+    requireThat(response.status===202,'Avvio agente non accettato. Verificare il canale API e la connessione.',502);
+    const result=await response.json();
+    requireThat(/^https:\/\/chatgpt\.com\/c\//.test(result.conversation_url||''),'Risposta avvio agente non valida.',502);
+    must(await db.from('commercial_report_batches').update({status:'requested',conversation_url:result.conversation_url,trigger_run_id:result.agent_trigger_run_id||null}).eq('id',batch.id));
+    return {status:'requested',batchId:batch.id,conversationUrl:result.conversation_url};
+  } catch(error) {
+    await db.from('commercial_report_batches').update({status:'attention'}).eq('id',batch.id);
+    throw error;
+  }
+}
+async function authorizedBatch(auth,batchId) {
+  requireThat(auth.profile.ruoli?.amministratore_workspace===true,'Piano report riservato al titolare amministratore.',403);
+  const settings=await reportSettings(auth.admin);
+  requireThat(settings?.enabled&&settings.owner_id===auth.profile.id&&settings.policy_hash===POLICY_HASH,'Nessuna delega mensile attiva per questo utente.',403);
+  await assertOwner(auth.admin,auth.profile.id);
+  const batch=must(await auth.admin.from('commercial_report_batches').select('*').eq('id',batchId).eq('owner_id',auth.profile.id).maybeSingle());
+  requireThat(batch?.policy_hash===POLICY_HASH,'Lotto non accessibile.',404);
+  return batch;
+}
+export async function reportPlan(auth) {
+  requireThat(auth.profile.ruoli?.amministratore_workspace===true,'Piano report non accessibile.',403);
+  const settings=await reportSettings(auth.admin);
+  requireThat(!settings||settings.owner_id===auth.profile.id,'Piano di un altro titolare.',403);
+  const batches=must(await auth.admin.from('commercial_report_batches').select('id,period,status,conversation_url,created_at,manifest').eq('owner_id',auth.profile.id).order('created_at',{ascending:false}).limit(6));
+  let recipients,contactsError;
+  try {recipients=await loadReportRecipients(auth.admin);}catch(error){contactsError=error.message;recipients={individual:[],aggregate:[]};}
+  return {enabled:settings?.enabled===true,agents:AGENTS,manifest:!contactsError?buildReportManifest(recipients):null,policyHash:POLICY_HASH,schedule:{day:10,time:'10:00',timezone:'Europe/Rome'},batches,recipients,contactsReady:!contactsError,contactsError};
+}
+export async function reportArtifact(auth,input) {
+  const batch=await authorizedBatch(auth,input.batchId);
+  if(input.action==='status') {
+    return {batch:{id:batch.id,period:batch.period,status:batch.status,manifest:batch.manifest},files:must(await auth.admin.from('commercial_report_files').select('artifact_key,sha256,bytes,pages,verified').eq('batch_id',batch.id)),emails:must(await auth.admin.from('commercial_report_emails').select('delivery_key,status,sent_at').eq('batch_id',batch.id))};
+  }
+  const recipients=await loadReportRecipients(auth.admin);
+  requireThat(recipientsFingerprint(recipients)===batch.recipients_hash,'Contatti o collegamenti variati: il lotto richiede revisione.',409);
+  requireThat(JSON.stringify(buildReportManifest(recipients).targets)===JSON.stringify(batch.manifest),'Perimetro report variato.',409);
+  const target=batch.manifest.find(t=>t.key===input.artifactKey);
+  requireThat(target,'Report fuori dal piano approvato.',403);
+  requireThat(batch.status==='requested','Lotto già accodato o non disponibile; leggere lo stato prima di ripetere.',409);
+  const existing=must(await auth.admin.from('commercial_report_files').select('sha256').eq('batch_id',batch.id).eq('artifact_key',target.key).maybeSingle());
+  if(existing){
+    requireThat(input.action==='finalize'&&existing.sha256===input.sha256,'Esiste già un PDF per questo report. Leggere lo stato.',409);
+    return queueIfComplete(auth,batch,recipients);
+  }
+  if(input.action==='chunk') {
+    requireThat(Number.isInteger(input.part)&&input.part>=0&&input.part<input.total&&input.total<=100&&input.total>0,'Blocco non valido.');
+    requireThat(/^[A-Za-z0-9+/=]+$/.test(input.base64||'')&&input.base64.length<=40000,'Contenuto blocco non valido.');
+    const old=must(await auth.admin.from('commercial_report_chunks').select('base64,total').eq('batch_id',batch.id).eq('artifact_key',target.key).eq('part',input.part).maybeSingle());
+    if(old)requireThat(old.base64===input.base64&&old.total===input.total,'Blocco già presente con contenuto diverso.',409);
+    else must(await auth.admin.from('commercial_report_chunks').insert({batch_id:batch.id,artifact_key:target.key,part:input.part,total:input.total,base64:input.base64}));
+    return {status:old?'already_stored':'stored',part:input.part};
+  }
+  requireThat(input.action==='finalize'&&input.verified===true&&input.period===batch.period&&input.network===target.network&&input.source===target.source,'Verifica PDF, periodo, fonte o rete non valida.');
+  requireThat(/^[a-f0-9]{64}$/.test(input.sha256||''),'SHA-256 non valido.');
+  const chunks=must(await auth.admin.from('commercial_report_chunks').select('part,total,base64').eq('batch_id',batch.id).eq('artifact_key',target.key).order('part'));
+  requireThat(chunks.length>0&&chunks.every((c,i)=>c.part===i&&c.total===chunks.length),'Blocchi incompleti.');
+  const encoded=chunks.map(c=>c.base64).join(''),bytes=Buffer.from(encoded,'base64');
+  requireThat(bytes.length<=MAX_PDF_BYTES&&bytes.subarray(0,5).toString()==='%PDF-'&&bytes.toString('base64')===encoded,'PDF non valido o superiore a 2 MB.');
+  requireThat(createHash('sha256').update(bytes).digest('hex')===input.sha256,'Integrità PDF non verificata.');
+  const doc=await PDFDocument.load(bytes);requireThat(doc.getPageCount()>=3,'Report incompleto.');
+  must(await auth.admin.from('commercial_report_files').insert({batch_id:batch.id,artifact_key:target.key,period:batch.period,network:target.network,source:target.source,filename:`Report_Commerciale_${target.key.replace(/[^a-zA-Z0-9_-]/g,'_')}_${batch.period.slice(0,7)}.pdf`,base64:encoded,sha256:input.sha256,bytes:bytes.length,verified:true,pages:doc.getPageCount()}));
+  must(await auth.admin.from('commercial_report_chunks').delete().eq('batch_id',batch.id).eq('artifact_key',target.key));
+  return queueIfComplete(auth,batch,recipients);
+}
+async function queueIfComplete(auth,batch,recipients) {
+  const files=must(await auth.admin.from('commercial_report_files').select('artifact_key,period,network,source,bytes,verified').eq('batch_id',batch.id));
+  if(files.length!==batch.manifest.length)return {status:'uploaded',received:files.length,expected:batch.manifest.length};
+  const jobs=buildDeliveries(batch.period,recipients,files);
+  must(await auth.admin.rpc('commercial_report_queue',{p_batch:batch.id,p_jobs:jobs}));
+  const local=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Rome',day:'2-digit',hour:'2-digit',hourCycle:'h23'}).formatToParts(new Date()).map(p=>[p.type,p.value]));
+  const dispatchDue=local.day==='10'&&Number(local.hour)>=10;
+  if(dispatchDue)waitUntil(dispatchCommercialReports().catch(()=>{
+    // Per-envelope statuses preserve ambiguous outcomes; never silently resend.
+    console.error('Commercial report dispatch requires review', {batchId:batch.id});
+  }));
+  return {status:'queued',batchId:batch.id,emails:jobs.length,dispatch:dispatchDue?'dispatch_requested':'waiting_for_10_00'};
+}

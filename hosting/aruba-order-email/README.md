@@ -74,3 +74,18 @@ Gli errori vengono scritti nel log PHP con prefisso:
 ```
 
 Non vengono registrati password, segreti o contenuti delle email.
+
+## Report commerciali mensili
+
+La versione con `report_protocol=1` supporta anche i PDF commerciali. Aggiornare
+solo `worker.php`, conservando il `config.php` e il mittente già in uso. Prima
+pubblicare il backend Workspace con la migrazione `commercial_report_delivery`.
+La verifica autenticata `GET ?action=report_capabilities` non elabora alcuna coda.
+Non usare una richiesta POST per verificare una versione precedente: i vecchi
+worker interpretano le azioni sconosciute come un normale invio ordini.
+
+`POST {"action":"run_reports"}` elabora esclusivamente la coda report. I PDF
+vengono scaricati singolarmente attraverso il backend autenticato e verificati
+con SHA-256, senza link pubblici. Gli invii incerti richiedono verifica umana;
+non vengono ripetuti automaticamente. Il piano è inizialmente disabilitato e
+si collega dalla pagina Workspace `/settings/commercial-reports`.

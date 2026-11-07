@@ -52,6 +52,7 @@ const ScreenBuilder = lazy(() => import("./pages/Settings/ScreenBuilder"));
 const ConfigurableWorkspaceScreen = lazy(() => import("./pages/Settings/ConfigurableWorkspaceScreen"));
 const WorkspaceMenuContainer = lazy(() => import("./pages/Modules/WorkspaceMenuContainer"));
 const AISettings = lazy(() => import("./pages/Settings/AISettings"));
+const CommercialReportDelivery = lazy(() => import("./pages/Settings/CommercialReportDelivery"));
 const DigitalConnectionsSettings = lazy(() => import("./pages/Settings/DigitalConnectionsSettings"));
 const CompanyLetterheads = lazy(() => import("./pages/Settings/CompanyLetterheads"));
 const Notifications = lazy(() => import("./pages/Notifications/Notifications"));
@@ -167,6 +168,7 @@ function App() {
               <Route path="settings/menu" element={<SettingsAccessGuard adminOnly><MenuManagement /></SettingsAccessGuard>} />
               <Route path="settings/layout-builder/:targetType/:targetCode" element={<SettingsAccessGuard adminOnly><ScreenBuilder /></SettingsAccessGuard>} />
               <Route path="settings/ai" element={<SettingsAccessGuard any={["settings.manage"]}><AISettings /></SettingsAccessGuard>} />
+              <Route path="settings/commercial-reports" element={<SettingsAccessGuard adminOnly><CommercialReportDelivery /></SettingsAccessGuard>} />
               <Route path="settings/company-letterheads" element={<SettingsAccessGuard any={["settings.manage"]}><CompanyLetterheads /></SettingsAccessGuard>} />
               <Route path="settings/crm-digital" element={<SettingsAccessGuard adminOnly><DigitalConnectionsSettings /></SettingsAccessGuard>} />
               <Route path="notifications" element={<Notifications />} />

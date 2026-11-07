@@ -22,6 +22,7 @@ import { memoryTools, activityTools } from './memory-activities.js';
 import { businessReadTools } from './business-reads.js';
 import {readDdtPrintSettings} from '../ai/ddt-print-settings.js';
 import { commerceReadTools } from './commerce-reads.js';
+import { commercialReportTools } from './commercial-report-tools.js';
 
 const read = (description, schema, execute) => ({ description, inputSchema: schema, execute, effect: 'read' });
 const querySchema = objectSchema({ query: { type: 'string', minLength: 1, maxLength: 160 } }, ['query']);
@@ -37,7 +38,7 @@ const datasets = {
 export function createBrainCatalog(auth) {
   const controlled = availableControlledActions(auth);
   const tools = { ...workspaceReadTools(auth), ...operationalReadTools(auth),
-    ...productionEmergencyTools(auth),
+    ...productionEmergencyTools(auth), ...commercialReportTools(auth),
     ...recoveryTools(auth, Boolean(controlled.MES_PLAN_APPLY)), ...memoryTools(auth), ...activityTools(auth), ...businessReadTools(auth), ...commerceReadTools(auth),
     ...rdpCreationTools(auth, Boolean(controlled.RDP_CREATE)),
     ...(controlled.FORMULA_CREATE_REVISION ? formulaReadTools(auth) : {}),

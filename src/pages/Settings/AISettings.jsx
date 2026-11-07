@@ -40,7 +40,7 @@ const optionalNumber = (value) => value === "" || value === null || value === un
 
 export default function AISettings() {
   const goBack = useBackNavigation("/settings");
-  const { hasPermission, profile } = useAuth();
+  const { hasPermission, profile, isAdminUser } = useAuth();
   const canManage = hasPermission("settings.manage");
   const [departments, setDepartments] = useState([]);
   const [moduleDepartments, setModuleDepartments] = useState(new Set());
@@ -260,6 +260,7 @@ export default function AISettings() {
 
   return (
     <section className="ai-settings-page">
+      {isAdminUser && <p><a href="/settings/commercial-reports">Invio mensile report commerciali</a></p>}
       {message && <div className={`ai-settings-message ${message.type}`}>{message.text}</div>}
       {loading ? <div className="ai-settings-loading">Caricamento configurazione...</div> : (
         <>

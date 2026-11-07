@@ -1,3 +1,5 @@
+import { productionReportTools } from './production-report-reads.js';
+import { logisticsReadTools } from './logistics-reads.js';
 import { canReadModule } from '../ai/operational-read.js';
 import { handleProgremesReadonlyRequest } from '../progremes-readonly-api.js';
 import { PROGREMES_ALLOWED_RESOURCES } from '../progremes-readonly-client.js';
@@ -7,7 +9,7 @@ import { objectSchema } from './schema.js';
 const orderModules={prof:'ordini_pr',ph:'ordini_ph',private:'ordini_private'};
 const check=result=>{if(result.error)throw result.error;return result.data;};
 export function businessReadTools(auth) {
-  const tools={},types=Object.keys(orderModules).filter(type=>canReadModule(auth,[orderModules[type]]));
+  const tools={...productionReportTools(auth),...logisticsReadTools(auth)},types=Object.keys(orderModules).filter(type=>canReadModule(auth,[orderModules[type]]));
   if(types.length)tools.WORKSPACE_ORDERS_SEARCH={description:'Legge documenti nella cache ordini Mexal, inclusi annullati e bozze: non è il KPI Ordinato CRM. Per analisi allineate alla dashboard usare CRM_CUSTOMER_SEARCH con orderModule. Usare agente_nome nei report, mantenendo il codice solo come riferimento. Rispetta moduli, integrazioni e agenti del richiedente. Non genera o invia ordini.',effect:'read',inputSchema:objectSchema({
     module:{type:'string',enum:types},customerCode:{type:'string',maxLength:80},offset:{type:'integer',minimum:0,maximum:100000},
   },['module']),execute:async input=>{

@@ -42,11 +42,12 @@ export function configurationFor(evidence,configs) {
  return applicableConfiguration(evidence,configs);
 }
 async function readConfigurations(admin) {return readAllRows(()=>admin.from("production_cost_configurations").select("*").order("effective_from",{ascending:false}).order("created_at",{ascending:false}));}
-export async function handleProductionCosts(req,body) {
+export async function handleProductionCosts(req,body,{readOnly=false,sessionFactory=costSession}={}) {
+ if(readOnly && (body.operation||"list")!=="list")throw fail("Lettura consuntivi: operazione non consentita.",400);
  const op=body.operation||"list",isAI=["ai-propose","ai-history","ai-proposal"].includes(op),isConfig=isAI||["configuration","save-configuration","machines","station-history","filling-history"].includes(op);
  const write=isAI||["dates-read","dates-preview","dates-save","save-configuration","adjust","overtime","allocate-invoice"].includes(op);
  const privateReport=op==="private-list";
- const session=await costSession(req,privateReport?"produzione.consuntivi_private":isConfig?CONFIG:REPORT,write),{admin,caller,profile}=session;
+ const session=await sessionFactory(req,privateReport?"produzione.consuntivi_private":isConfig?CONFIG:REPORT,write),{admin,caller,profile}=session;
  if(isAI)return handleCostAI(req,body,session);
  if(["dates-read","dates-preview","dates-save"].includes(op)){
   const row=await recordFor(session,Number(body.id));
@@ -198,20 +199,20 @@ export async function handleProductionCosts(req,body) {
  const fillingPolicy=activeFillingPolicy(configs,today);
  const needsFillingHistory=fillingPolicy||configs.some(c=>c.settings?.laborRules?.filling?.basis==="historical_pieces");
  const [sourceHistory,sourceFillingHistory]=await Promise.all([
-  needsHistory?readStationHistory(admin,{settings:policy?.settings,companyCalendar}):null,
-  needsFillingHistory?readFillingHistory(admin,{settings:fillingPolicy?.settings,companyCalendar}):null
+  needsHistory?readStationHistory(admin,{persist:!readOnly,settings:policy?.settings,companyCalendar}):null,
+  needsFillingHistory?readFillingHistory(admin,{persist:!readOnly,settings:fillingPolicy?.settings,companyCalendar}):null
  ]);
  const fillingHistory=fillingHistorySummary(sourceFillingHistory),fillingHistoriesByConfig=new Map();
  if(needsFillingHistory&&!fillingPolicy&&sourceFillingHistory&&!sourceFillingHistory.error){
   await Promise.all(configs.filter(c=>c.settings?.laborRules?.filling?.basis==="historical_pieces").map(async c=>{
-   fillingHistoriesByConfig.set(c.id,fillingHistorySummary(await readFillingHistory(admin,{request:async()=>[sourceFillingHistory],settings:c.settings,companyCalendar})));
+   fillingHistoriesByConfig.set(c.id,fillingHistorySummary(await readFillingHistory(admin,{persist:!readOnly,request:async()=>[sourceFillingHistory],settings:c.settings,companyCalendar})));
   }));
  }
  const history=stationHistorySummary(sourceHistory);
  const historiesByConfig=new Map();
  if(needsHistory&&!policy&&sourceHistory&&!sourceHistory.error){
   await Promise.all(configs.filter(c=>c.settings?.laborRules?.station?.basis==="historical_productivity").map(async c=>{
-   historiesByConfig.set(c.id,stationHistorySummary(await readStationHistory(admin,{request:async()=>[sourceHistory],settings:c.settings,companyCalendar})));
+   historiesByConfig.set(c.id,stationHistorySummary(await readStationHistory(admin,{persist:!readOnly,request:async()=>[sourceHistory],settings:c.settings,companyCalendar})));
   }));
  }
  const currentWorks=new Map((sourceHistory?.works||[]).map(w=>[w.id,w]));

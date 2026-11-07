@@ -4,7 +4,7 @@ import { createProgremesClient } from "./progremes-readonly-client.js";
 import { fillingHistorySummary,withAdditionalFillingShifts } from "../src/features/production-costs/filling-history.js";
 import { PRODUCTION_COST_HISTORY_FROM } from "./production-cost-history-period.js";
 
-export async function readFillingHistory(admin,{settings,companyCalendar,historyFrom=settings?.historyFrom??PRODUCTION_COST_HISTORY_FROM,historyTo=settings?.historyTo??"",request=()=>createProgremesClient({timeoutMs: 300000}).request("production-cost-filling-history")}={}) {
+export async function readFillingHistory(admin,{persist=true,settings,companyCalendar,historyFrom=settings?.historyFrom??PRODUCTION_COST_HISTORY_FROM,historyTo=settings?.historyTo??"",request=()=>createProgremesClient({timeoutMs: 300000}).request("production-cost-filling-history")}={}) {
  try {
   companyCalendar??=await readCostCalendar(admin);
   settings={...settings,companyCalendar,historyFrom,historyTo};
@@ -19,6 +19,7 @@ export async function readFillingHistory(admin,{settings,companyCalendar,history
   source={...source,economicDepartment:"Confezionamento",costMethod:"historical_pieces"};
   const {generatedAt,asOfLocal,...stable}=source;
   const fingerprint=createHash("sha256").update("FILLING:").update(JSON.stringify(stable)).digest("hex");
+  if (!persist) return {...source,generatedAt,asOfLocal};
   const saved=await admin.from("production_cost_station_history").upsert({fingerprint,source},{onConflict:"fingerprint",ignoreDuplicates:true});
   if(saved.error)throw saved.error;
   const snapshot=await admin.from("production_cost_station_history").select("id,created_at").eq("fingerprint",fingerprint).single();

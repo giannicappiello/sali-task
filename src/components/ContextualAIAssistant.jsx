@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Bot, X, Maximize2 } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { PROGRE_AI_URL } from '../config/progreAI';
 import { captureAssistantContext, activeWorkspaceDialogs } from '../lib/assistantContext';
 import { captureWithMesFrame } from '../lib/assistantFrameContext';
 import { getCostAssistantDraft, subscribeCostAssistantDraft } from '../features/production-costs/assistant-bridge';
@@ -71,13 +72,13 @@ export default function ContextualAIAssistant({ title = 'Workspace', module = 'W
     return {...context, productionCostSettings:getCostAssistantDraft()?.settings || null};
   };
   return <>
-    <button type="button" className="context-ai-trigger" onClick={() => open()} aria-label="Apri assistente AI"><Bot size={21}/><span>AI</span></button>
-    {dialogs.map((dialog, i) => createPortal(<button type="button" className="context-ai-trigger assistant-popup-trigger" onClick={event => {event.stopPropagation();open(dialog);}} aria-label="Apri assistente AI per questo popup"><Bot size={18}/> AI</button>, dialog.querySelector('[data-assistant-actions]') || dialog.querySelector('header') || dialog, `ai-popup-${i}`))}
+    <a className="context-ai-trigger" href={PROGRE_AI_URL} target="_blank" rel="noopener noreferrer" aria-label="Apri Progre AI in ChatGPT" title="Apri Progre AI in ChatGPT"><Bot size={21}/><span>AI</span></a>
+    {dialogs.map((dialog, i) => createPortal(<a className="context-ai-trigger assistant-popup-trigger" href={PROGRE_AI_URL} target="_blank" rel="noopener noreferrer" onClick={event => event.stopPropagation()} aria-label="Apri Progre AI in ChatGPT"><Bot size={18}/> AI</a>, dialog.querySelector('[data-assistant-actions]') || dialog.querySelector('header') || dialog, `ai-popup-${i}`))}
     {mounted && createPortal(<dialog ref={panel} data-workspace-assistant="true" onCancel={() => setOpened(false)} onClose={() => setOpened(false)} className={`workspace-assistant-panel ${expanded ? 'expanded' : ''}`} aria-label="Assistente Workspace">
-      <header className="workspace-assistant-heading"><div><strong>Second Brain Progrè</strong><small>{contextTitle || title}</small></div><button type="button" onClick={() => setExpanded(!expanded)} aria-label="Espandi o riduci assistente"><Maximize2 size={18}/></button><button type="button" onClick={() => setOpened(false)} aria-label="Chiudi assistente"><X size={20}/></button></header>
+      <header className="workspace-assistant-heading"><div><strong>Progre AI</strong><small>{contextTitle || title}</small></div><button type="button" onClick={() => setExpanded(!expanded)} aria-label="Espandi o riduci assistente"><Maximize2 size={18}/></button><button type="button" onClick={() => setOpened(false)} aria-label="Chiudi assistente"><X size={20}/></button></header>
       {costDraft && <nav className="assistant-cost-tabs" aria-label="Assistente costi"><button type="button" aria-pressed={!costReview} onClick={()=>setCostReview(false)}>Conversazione</button><button type="button" aria-pressed={costReview} onClick={()=>setCostReview(true)}>Proposte e verifiche costi</button></nav>}
       <div className="assistant-conversation-pane" hidden={Boolean(costDraft && costReview)}>
-      <Suspense fallback={<p>Caricamento Second Brain…</p>}><Assistant key={`${session?.user?.id}-${promptRequest?.id || ''}`} embedded getScreenContext={getContext} promptRequest={promptRequest}/></Suspense>
+      <Suspense fallback={<p>Caricamento Progre AI…</p>}><Assistant key={`${session?.user?.id}-${promptRequest?.id || ''}`} embedded getScreenContext={getContext} promptRequest={promptRequest}/></Suspense>
       </div>
       {costDraft && costReview && <div className="assistant-cost-review"><CostProposalReview {...costDraft}/></div>}
     </dialog>, document.body)}

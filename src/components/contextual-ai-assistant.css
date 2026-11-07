@@ -4,3 +4,4 @@
 .context-ai-backdrop{width:100vw;height:100vh;height:100dvh;overflow:hidden}
 .context-ai-dialog{height:100vh;height:100dvh;max-height:100dvh;min-height:0;overflow:hidden}
 .context-ai-messages{min-height:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+.context-ai-trigger{text-decoration:none}

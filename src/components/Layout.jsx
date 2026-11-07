@@ -84,7 +84,7 @@ const pageInfo = {
   "/magazzino-dashboard": { title: "Dashboard Magazzino", subtitle: "Resoconto quantitativo ed economico delle giacenze Workspace." },
   "/documentation": { title: "Documenti", subtitle: "Schede tecniche, certificazioni e documentazione aziendale." },
   "/manuali-uso": { title: "Manuali d'uso", subtitle: "Manuali d'uso e guide operative." },
-  "/assistente-ai": { title: "Second Brain Progrè", subtitle: "Dati e operazioni aziendali con il tuo account Codex." },
+  "/assistente-ai": { title: "Progre AI", subtitle: "Dati e operazioni aziendali con il tuo account ChatGPT Business." },
   "/settings/ai": { title: "Configurazione AI", subtitle: "Capacità, limiti e accessi per reparto." },
   "/settings/company-letterheads": { title: "Intestazioni aziendali", subtitle: "Modelli ufficiali, versioni e associazioni documentali." },
   "/settings/users": { title: "Utenti e accessi", subtitle: "Dati, organizzazione, autorizzazioni personali e AI." },

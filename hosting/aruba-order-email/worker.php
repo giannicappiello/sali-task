@@ -40,7 +40,9 @@ function requireHttpAuthorization(array $config): void
     if (PHP_SAPI === 'cli') {
         return;
     }
-    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    $readCapabilities = $_SERVER['REQUEST_METHOD'] === 'GET'
+        && ($_GET['action'] ?? '') === 'report_capabilities';
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST' && !$readCapabilities) {
         respond(['error' => 'Metodo non consentito.'], 405);
     }
     $headers = requestHeadersLower();
@@ -171,9 +173,9 @@ function runTest(array $config): array
     return ['status' => 'test_sent', 'message_id' => $mail['message_id']];
 }
 
-function processOne(array $config): array
+function processOne(array $config, bool $reportsOnly = false): array
 {
-    $claimed = apiRequest($config, ['action' => 'claim', 'shipment_protocol' => 1]);
+    $claimed = apiRequest($config, ['action' => 'claim', 'shipment_protocol' => 1, 'report_protocol' => 1, 'reports_only' => $reportsOnly]);
     if (($claimed['status'] ?? '') === 'idle') {
         return ['status' => 'idle'];
     }
@@ -182,8 +184,31 @@ function processOne(array $config): array
     }
     $email = $claimed['email'];
     $shipment = str_starts_with((string)$email['id'], 'ddt:');
+    $report = str_starts_with((string)$email['id'], 'report:');
     $definitive = false;
     try {
+        if ($report) {
+            // Fetch each private PDF independently. The aggregate may exceed the
+            // Vercel response limit; never turn it into a public download link.
+            $totalBytes = 0;
+            foreach ($claimed['attachments'] as &$attachment) {
+                $file = apiRequest($config, ['action' => 'attachment',
+                    'email_id' => $email['id'], 'worker_id' => $claimed['worker_id'],
+                    'lock_token' => $email['lock_token'],
+                    'report_artifact_key' => $attachment['report_artifact_key']]);
+                $bytes = base64_decode((string)($file['base64'] ?? ''), true);
+                if ($bytes === false || strlen($bytes) !== (int)$attachment['bytes']
+                    || !hash_equals((string)$attachment['sha256'], hash('sha256', $bytes))) {
+                    throw new RuntimeException('Integrità PDF report non verificata.');
+                }
+                $totalBytes += strlen($bytes);
+                if ($totalBytes > 18000000) {
+                    throw new RuntimeException('Allegati report oltre il limite email.');
+                }
+                $attachment['base64'] = $file['base64'];
+            }
+            unset($attachment);
+        }
         $mail = buildMail(
             $config,
             (string)$email['destinatario'],
@@ -227,7 +252,13 @@ try {
     $input = json_decode((string)file_get_contents('php://input'), true);
     $action = PHP_SAPI === 'cli'
         ? (($argv[1] ?? '') === '--test' ? 'test' : 'run')
-        : strtolower(trim((string)($input['action'] ?? 'run')));
+        : strtolower(trim((string)($_GET['action'] ?? $input['action'] ?? 'run')));
+
+    if ($action === 'report_capabilities') {
+        respond(['report_protocol' => 1,
+            'queue_enabled' => ($config['queue_enabled'] ?? false) === true,
+            'from_email' => safeHeader((string)$config['from_email'])]);
+    }
 
     if ($action === 'test') {
         respond(runTest($config));
@@ -236,10 +267,14 @@ try {
         respond(['status' => 'paused', 'message' => 'Coda reale disabilitata in config.php.']);
     }
 
-    $limit = max(1, min(25, (int)($config['max_jobs_per_run'] ?? 10)));
+    $reportsOnly = $action === 'run_reports';
+    if ($reportsOnly) {
+        set_time_limit(600);
+    }
+    $limit = $reportsOnly ? 40 : max(1, min(25, (int)($config['max_jobs_per_run'] ?? 10)));
     $results = [];
     for ($index = 0; $index < $limit; $index++) {
-        $result = processOne($config);
+        $result = processOne($config, $reportsOnly);
         $results[] = $result;
         if ($result['status'] === 'idle') {
             break;

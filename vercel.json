@@ -25,6 +25,10 @@
   },
   "crons": [
     {
+      "path": "/api/mexal/automation?route=commercial-reports&cron=1",
+      "schedule": "0 7,8,9 9,10 * *"
+    },
+    {
       "path": "/api/cron/mexal-dispatcher",
       "schedule": "0 22 * * *"
     }

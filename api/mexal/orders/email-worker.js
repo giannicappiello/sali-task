@@ -4,6 +4,7 @@ import process from 'node:process';
 import { createClient } from "@supabase/supabase-js";
 import { loadOrderPdfEmailData } from "../../../server/orders/order-pdf-server.js";
 import { claimShipmentForHttpWorker, updateShipmentEmail } from '../../../server/shipment-email-worker.js';
+import {claimCommercialEmail,commercialWorkerAction} from '../../../server/reports/commercial-worker.js';
 
 const LEASE_SECONDS = 300;
 
@@ -53,8 +54,17 @@ export default async function handler(req, res) {
     const supabase = adminClient();
     const action = String(req.body?.action || "").trim().toLowerCase();
 
+    if(String(req.body?.email_id||'').startsWith('report:')) {
+      return res.status(200).json(await commercialWorkerAction(supabase,req.body));
+    }
+
     if (action === "claim") {
       const id = workerId(req);
+      if(req.body?.report_protocol===1) {
+        const report=await claimCommercialEmail(supabase,id);
+        if(report)return res.status(200).json(report);
+      }
+      if(req.body?.reports_only===true)return res.status(200).json({status:'idle'});
       const legacyAruba = req.body?.shipment_protocol == null && String(req.headers['x-worker-source'] || '') === 'aruba';
       if (req.body?.shipment_protocol === 1 || legacyAruba) {
         const shipment = await claimShipmentForHttpWorker(supabase,id,{legacyAruba});

@@ -45,6 +45,7 @@ export async function handleSecondBrain(req, dependencies = {}) {
     identity: { id: auth.profile.id, name: [auth.profile.nome,auth.profile.cognome].filter(Boolean).join(' '), roleAiLevel: auth.capabilities.role_ai_level },
     tools: Object.entries(catalog).map(([name, tool]) => ({ name, description: tool.description, inputSchema: tool.inputSchema,
       annotations: { readOnlyHint: tool.effect === 'read', destructiveHint: false, openWorldHint: true, idempotentHint: tool.effect === 'read' }, effect: tool.effect })),
+    productionPermissions: auth.productionPermissions || [],
     externalModelCalls: false, orderAiGeneration: 'unchanged-external-api',
   };
   if (body.action === 'call') {

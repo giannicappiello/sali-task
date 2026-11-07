@@ -9,6 +9,7 @@ import { machineReadTools } from '../ai/machine-instructions.js';
 import { productionDateTools } from '../ai/production-dates.js';
 import { rdpCreationTools } from '../ai/rdp-create.js';
 import { productionStartTools } from '../ai/production-start.js';
+import { productionEmergencyTools } from '../ai/production-emergency.js';
 import { recoveryTools } from '../ai/operation-recovery.js';
 import { planningCall, planningRequestSchema } from '../ai/planning-lifecycle.js';
 import { priorityCall, simulatePriority, priorityRequestSchema } from '../ai/priority-revision.js';
@@ -36,6 +37,7 @@ const datasets = {
 export function createBrainCatalog(auth) {
   const controlled = availableControlledActions(auth);
   const tools = { ...workspaceReadTools(auth), ...operationalReadTools(auth),
+    ...productionEmergencyTools(auth),
     ...recoveryTools(auth, Boolean(controlled.MES_PLAN_APPLY)), ...memoryTools(auth), ...activityTools(auth), ...businessReadTools(auth), ...commerceReadTools(auth),
     ...rdpCreationTools(auth, Boolean(controlled.RDP_CREATE)),
     ...(controlled.FORMULA_CREATE_REVISION ? formulaReadTools(auth) : {}),

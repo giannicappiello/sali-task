@@ -13,6 +13,7 @@ import { lotCall, lotConfirmationSchema, assertLotPreview } from './lot-maintena
 import { productBulkSchema, productChangeSchema, productChangePreview } from './product-changes.js';
 import { machineCall, machineDraftSchema } from './machine-instructions.js';
 import { rdpCreateSchema, proposeRdpCreation, validateRdpSnapshot, executeRdpCreation } from './rdp-create.js';
+import { hasEmergencyPermission, assertEmergencyPermission, assertAnomaly, anomalyProperties, reopenSchema, previewReopen, previewForcedStart, verifyForcedClosure, reopenCall, PRODUCTION_EMERGENCY_PERMISSIONS } from './production-emergency.js';
 
 import {ddtPrintSettingsSchema, previewDdtPrintSettings, applyDdtPrintSettings} from './ddt-print-settings.js';
 
@@ -67,6 +68,12 @@ const externalEntitySchema = (entityLabel) => ({
 });
 
 export const CONTROLLED_AI_ACTIONS = Object.freeze({
+  MES_PRODUCTION_REOPEN: { system: 'mes', risk: 'destructive', permission: 'progremes.production.reopen', schema: reopenSchema,
+    description: 'Riapre una lavorazione conclusa solo dopo anteprima MES, permesso specifico, anomalia e conferma Workspace. Blocca documenti contabilizzati e dipendenze; non annulla SL/CL.' },
+  MES_PRODUCTION_FORCE_START: { system: 'mes', risk: 'destructive', permission: 'progremes.production.force_start', schema: {
+    ...batchStartSchema, required: [...batchStartSchema.required, ...Object.keys(anomalyProperties)],
+    properties: { ...batchStartSchema.properties, ...anomalyProperties, kind: { type: 'string', const: 'production' }, allowShortage: { type: 'boolean', const: true } },
+  }, description: 'Avvio con carenze tramite il percorso MES esistente, stampa confermata, permesso specifico e anomalia. Non aggira gli altri blocchi.' },
   DDT_ARCHIVED_PDF_REFRESH: {system:'mes',risk:'write',permission:'integrations.configure',schema:ddtArchiveRefreshSchema,description:'Rigenera solo i PDF delle bolle archiviate selezionate in BC1 con prezzi, preservando gli originali. Nessuna emissione, email o stampa. Richiede conferma umana in Workspace.'},
   DDT_PRINT_SETTINGS_UPDATE: {system:'mes',risk:'write',permission:'integrations.configure',schema:ddtPrintSettingsSchema,
     description:'Imposta solo per nuove stampe DDT e packing per bancale: MAGAZZINO, fronte/retro lato lungo, bianco e nero, vassoio 1. Non stampa documenti.'},
@@ -82,15 +89,15 @@ export const CONTROLLED_AI_ACTIONS = Object.freeze({
   MES_ODL_VERIFY: { system: "mes", risk: "write", permission: "progremes.write", schema: planningConfirmSchema },
   MES_MATERIAL_REALLOCATE: { system: "mes", risk: "destructive", permission: "progremes.write", schema: materialReallocationSchema },
   MES_PRIORITY_REVISE: { system: "mes", risk: "destructive", permission: "progremes.write", schema: priorityConfirmSchema },
-  MES_PRODUCTION_FORCE_CLOSE: { system: "mes", risk: "destructive", permission: "progremes.write", schema: {
+  MES_PRODUCTION_FORCE_CLOSE: { system: "mes", risk: "destructive", permission: "progremes.production.force_close", schema: {
     type: "object", additionalProperties: false,
-    required: ["targetId", "productionId", "productionOrderId", "orderNumber", "articleCode", "phase", "expectedStatus", "expectedStart", "expectedProducedQuantity", "expectedScrapQuantity", "reason", "slAndClAlreadyRegistered"],
+    required: ["targetId", "productionId", "productionOrderId", "orderNumber", "articleCode", "phase", "expectedStatus", "expectedStart", "expectedProducedQuantity", "expectedScrapQuantity", "reason", "slAndClAlreadyRegistered", "anomalyType", "anomalyDescription"],
     properties: {
       targetId: identifier, productionId: { type: "integer", minimum: 1 }, productionOrderId: { type: "integer", minimum: 1 },
       orderNumber: identifier, articleCode: identifier, phase: { type: "string", enum: ["Semilavorato", "Confezionamento", "Astucciatura"] },
       expectedStatus: { type: "string", enum: ["InProduzione", "Sospeso"] }, expectedStart: identifier,
       expectedProducedQuantity: { type: "number", exclusiveMinimum: 0 }, expectedScrapQuantity: { type: "number", minimum: 0 },
-      reason: { type: "string", minLength: 1, maxLength: 1000 }, slAndClAlreadyRegistered: { type: "boolean", const: true },
+      ...anomalyProperties, slAndClAlreadyRegistered: { type: "boolean", const: true },
     },
   } },
   UI_CONFIGURE_VIEW: { system: "workspace", risk: "write", permission: "settings.manage", schema: {
@@ -153,6 +160,8 @@ export const CONTROLLED_AI_ACTIONS = Object.freeze({
 });
 
 function canPropose(auth, descriptor) {
+  const emergencyTool = Object.keys(PRODUCTION_EMERGENCY_PERMISSIONS).find(tool => CONTROLLED_AI_ACTIONS[tool] === descriptor);
+  if (emergencyTool && !hasEmergencyPermission(auth, emergencyTool)) return false;
   // Legacy registry labels without an execution handler must never become promises to the operator.
   if ([CONTROLLED_AI_ACTIONS.PLANNING_CRITERIA_UPDATE, CONTROLLED_AI_ACTIONS.RDP_UPDATE,
     CONTROLLED_AI_ACTIONS.OP_UPDATE, CONTROLLED_AI_ACTIONS.LOT_DOCUMENT_LINK,
@@ -188,6 +197,11 @@ function stableValue(value) {
 export async function proposeControlledAction(auth, tool, input, { correlationId = randomUUID() } = {}) {
   const descriptor = CONTROLLED_AI_ACTIONS[tool];
   if (!descriptor || !canPropose(auth, descriptor)) throw Object.assign(new Error("Azione AI non autorizzata per questo profilo."), { status: 403 });
+  if (PRODUCTION_EMERGENCY_PERMISSIONS[tool]) { await assertEmergencyPermission(auth, tool); assertAnomaly(input); }
+  if (tool === 'MES_PRODUCTION_START' && input.allowShortage === true)
+    throw Object.assign(new Error('Usare MES_PRODUCTION_FORCE_START con permesso specifico e anomalia.'), { status: 403 });
+  if (tool === 'MES_PRODUCTION_FORCE_START') input = { ...input, allowShortage: true, evidence: await previewForcedStart(auth, input) };
+  if (tool === 'MES_PRODUCTION_REOPEN') input = { ...input, evidence: await previewReopen(auth, input) };
   if (['MES_PRODUCTION_START_CORRECT','MES_PRODUCTION_DATES_CORRECT'].includes(tool)) input = { ...input, evidence: await productionDateCall(auth, 'preview', { input }) };
   if (tool === 'MES_PRODUCTION_RESUME_CLOSE') {
     const state = await readResumableClosure(auth, input);
@@ -239,6 +253,7 @@ export async function proposeControlledAction(auth, tool, input, { correlationId
   if (tool === "MES_PRODUCTION_FORCE_CLOSE") {
     const current = await findProductionForClosure(auth, input.orderNumber);
     assertClosureSnapshot(input, current.items);
+    input = { ...input, evidence: await verifyForcedClosure(auth, input) };
   }
   const canonical = JSON.stringify(stableValue(input || {}));
   // Verification may be requested again after a failed/partial reconciliation.
@@ -266,7 +281,7 @@ function requiredEnvironment(name) {
 async function executeExternalAction(auth, pending) {
   if (pending.tool === 'DDT_ARCHIVED_PDF_REFRESH') return applyArchivedDdtRefresh(auth,pending);
   if (pending.tool === 'DDT_PRINT_SETTINGS_UPDATE') return applyDdtPrintSettings(auth,pending);
-  if (pending.tool === 'MES_PRODUCTION_START') return executeProductionStart(auth, pending);
+  if (['MES_PRODUCTION_START', 'MES_PRODUCTION_FORCE_START'].includes(pending.tool)) return executeProductionStart(auth, pending);
   if (pending.tool === 'RDP_CREATE') {
     let result = {}, failure = null;
     try { result = await executeRdpCreation(auth, pending); }
@@ -288,6 +303,7 @@ async function executeExternalAction(auth, pending) {
     actionId: pending.id, tool: pending.tool, target: pending.target, input: actionInput,
     idempotencyKey: pending.idempotency_key, requestId: pending.request_id, correlationId: pending.correlation_id,
     actor: `workspace:${auth.profile.id}`, confirmed: true,
+    emergencyPermission: PRODUCTION_EMERGENCY_PERMISSIONS[pending.tool] || null,
   }));
   const timestamp = Math.floor(Date.now() / 1000); const eventId = pending.request_id;
   let result = null; let failure = null;
@@ -346,6 +362,13 @@ async function executeExternalAction(auth, pending) {
       else failure = [state.message, failure].filter(Boolean).join(' ');
     } catch (error) { failure = `Esito chiusura non verificato: ${error.message} ${failure || ''}`; }
   }
+  if (pending.tool === 'MES_PRODUCTION_REOPEN') {
+    try {
+      const verified = await reopenCall(auth, 'result', { idempotencyKey: pending.idempotency_key });
+      if (verified?.applied === true && verified.productionId === pending.payload_summary.targetId) { result = verified; failure = null; }
+      else failure = failure || 'Riapertura non verificata nell’audit MES.';
+    } catch (error) { failure = `Esito riapertura da verificare: ${error.message}. Nessuna ripetizione automatica.`; }
+  }
   if (failure && pending.tool === "MES_PRODUCTION_FORCE_CLOSE") {
     // Read back the durable confirmation; never retry a warehouse-related write blindly.
     try {
@@ -393,6 +416,13 @@ export async function decideControlledAction(auth, body) {
   if (pendingError || !pending || !CONTROLLED_AI_ACTIONS[pending.tool]) throw Object.assign(new Error("Proposta non trovata o non autorizzata."), { status: 404 });
   if (auth.manualPlanning && (!["MES_PLAN_APPLY", "MES_ODL_VERIFY"].includes(pending.tool) || pending.action !== "manual_planning")) throw Object.assign(new Error("Proposta non appartenente alla pianificazione manuale."), { status: 403 });
   const confirmed = body.decision === "confirm";
+  if (confirmed && PRODUCTION_EMERGENCY_PERMISSIONS[pending.tool]) {
+    await assertEmergencyPermission(auth, pending.tool); assertAnomaly(pending.payload_summary);
+  }
+  if (confirmed && pending.tool === 'MES_PRODUCTION_START' && pending.payload_summary.allowShortage === true)
+    throw Object.assign(new Error('Rigenerare come avvio forzato con permesso specifico e anomalia.'), { status: 403 });
+  if (confirmed && pending.tool === 'MES_PRODUCTION_REOPEN' && pending.status === 'proposed') await previewReopen(auth, pending.payload_summary);
+  if (confirmed && pending.tool === 'MES_PRODUCTION_FORCE_START' && pending.status === 'proposed') await previewForcedStart(auth, pending.payload_summary);
   // A stored proposal is not a permission grant. Recheck current capabilities
   // before any preview, MES request or database mutation, even on a retry.
   if (confirmed && (!canPropose(auth, CONTROLLED_AI_ACTIONS[pending.tool]) ||
@@ -411,6 +441,7 @@ export async function decideControlledAction(auth, body) {
   if (confirmed && pending.tool === "MES_PRODUCTION_FORCE_CLOSE" && pending.status === "proposed") {
     const current = await findProductionForClosure(auth, pending.payload_summary.orderNumber);
     assertClosureSnapshot(pending.payload_summary, current.items);
+    await verifyForcedClosure(auth, pending.payload_summary);
   }
   if (confirmed && pending.tool === 'FORMULA_CREATE_REVISION' && pending.status === 'proposed') {
     const preview = await formulaCall(auth, 'preview', { input: pending.payload_summary });
@@ -427,7 +458,7 @@ export async function decideControlledAction(auth, body) {
   let action = Array.isArray(decided) ? decided[0] : decided;
   let failure = null;
   if (confirmed && action.status === "confirmed" && CONTROLLED_AI_ACTIONS[action.tool].system === "mes") ({ action, failure } = await executeExternalAction(auth, action));
-  const answer = action.tool === 'MES_PRODUCTION_START' && action.status === 'confirmed' ? 'Stampa e avvio in elaborazione.' : action.tool === 'RDP_CREATE' && action.status === 'executed'
+  const answer = ['MES_PRODUCTION_START','MES_PRODUCTION_FORCE_START'].includes(action.tool) && action.status === 'confirmed' ? 'Stampa e avvio in elaborazione.' : action.tool === 'RDP_CREATE' && action.status === 'executed'
     ? `RdP ${action.result?.rdpNumber || action.result?.requestId} creata. Stato: ${action.result?.status}. Nessun OP o lotto creato.${action.result?.previewError ? ' Calcolo MES da completare: ' + action.result.previewError.message : ''}`
     : action.tool === "MES_PRIORITY_REVISE" ? (failure || action.error || action.result?.message || "Proposta rifiutata: nessun trasferimento eseguito.") : action.status === "executed" ? "Operazione applicata e registrata nellâ€™audit."
     : action.status === "rejected" ? "Proposta rifiutata. Nessuna modifica Ã¨ stata applicata."

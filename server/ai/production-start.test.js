@@ -55,6 +55,9 @@ test('material shortage is forwarded only as explicit input; unavailable print e
  const old=f.dependencies.client.batchSheet;
  f.dependencies.client.batchSheet=async payload=>{if(payload.operation==='print') shortage=payload.allowShortage;return old(payload);};
  f.action.payload_summary={...input,allowShortage:true};
+ f.action.tool='MES_PRODUCTION_FORCE_START';
+ f.action.payload_summary={...f.action.payload_summary,anomalyType:'materiale',anomalyDescription:'Carenza verificata nel foglio',reason:'Avvio parziale autorizzato'};
+ f.auth.scoped.rpc=async()=>({data:['progremes.production.force_start']});
  await executeProductionStart(f.auth,f.action,f.dependencies);assert.equal(shortage,true);assert.equal(f.action.status,'confirmed');
 });
 test('completed batch still verifies an earlier successful start',async()=>{

@@ -82,6 +82,11 @@ export async function authorizeAIRequest(req, { bypassAIEntitlements = false } =
   if (!bypassAIEntitlements && capabilities.module_access !== true) {
     throw Object.assign(new Error("Accesso al modulo Assistente AI non autorizzato."), { status: 403 });
   }
-  return { token, admin, scoped, profile, access, capabilities, developmentPermissions: {} };
+  // Missing migration or an unavailable permission service must never grant an
+  // emergency operation, including to a Workspace administrator.
+  const productionPermissionResult = await scoped.rpc('workspace_mes_production_permissions');
+  const productionPermissions = !productionPermissionResult.error && Array.isArray(productionPermissionResult.data)
+    ? productionPermissionResult.data : [];
+  return { token, admin, scoped, profile, access, capabilities, productionPermissions, developmentPermissions: {} };
 }
 

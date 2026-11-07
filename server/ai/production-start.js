@@ -34,6 +34,12 @@ async function complete(auth,pending,result,error=null) {
 }
 export async function executeProductionStart(auth,pending,{client=createProgremesProductionClient(),authorize=authorizeStart}={}) {
  const input=pending.payload_summary;
+ if(pending.tool==='MES_PRODUCTION_FORCE_START') {
+  const {assertEmergencyPermission,assertAnomaly}=await import('./production-emergency.js');
+  await assertEmergencyPermission(auth,pending.tool);assertAnomaly(input);
+ }
+ if(pending.tool==='MES_PRODUCTION_START' && input.allowShortage===true)
+  throw Object.assign(new Error('Avvio con carenze: usare la proposta forzata con permesso specifico.'),{status:403});
  await authorize(auth,input.kind);
  let printRequested=false;
  try {
@@ -66,7 +72,7 @@ export async function productionStartStatus(auth,id,{client=createProgremesProdu
  const stored=await auth.scoped.from('ai_action_audit').select('*').eq('id',id).eq('user_id',auth.profile.id).maybeSingle();
  if(stored.error) throw stored.error;
  const action=stored.data;
- if(!action || action.tool!=='MES_PRODUCTION_START') throw fail('Avvio non trovato o non accessibile.');
+  if(!action || !['MES_PRODUCTION_START','MES_PRODUCTION_FORCE_START'].includes(action.tool)) throw fail('Avvio non trovato o non accessibile.');
  await authorize(auth,action.payload_summary.kind);
  if(action.status!=='confirmed' || !action.result?.printJobId) return {controlledAction:{id:action.id,tool:action.tool,state:action.status,result:action.result,error:action.error},
   answer:action.status==='executed'?(action.result?.phaseStatus==='COMPLETED'?'Produzione avviata; lavorazione già conclusa.':'Produzione avviata: in lavorazione.'):action.error || 'Avvio non ancora confermato.'};

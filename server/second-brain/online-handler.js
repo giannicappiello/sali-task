@@ -64,7 +64,7 @@ export async function handleOnline(req,res){
   else if(input.method==='tools/call'){
    const name=input.params?.name,args=input.params?.arguments||{};
    try{
-    if(name==='BRAIN_STATUS')result=content({connected:true,online:true,identity:catalog.identity,externalModelCalls:false});
+    if(name==='BRAIN_STATUS')result=content({connected:true,online:true,identity:catalog.identity,productionPermissions:catalog.productionPermissions || [],externalModelCalls:false});
     else if(name==='BRAIN_REVIEW'){
      if(!['brain','controlled','heading'].includes(args.kind)||!/^[a-f0-9-]{36}$/i.test(args.id||''))throw fail('Proposta non valida.');
      result=content({requiresHuman:true,url:ORIGIN+'/assistente-ai?'+new URLSearchParams({view:'review',kind:args.kind,proposalId:args.id}),message:'Apri Workspace e conferma personalmente il riepilogo. Non automatizzare la conferma.'});

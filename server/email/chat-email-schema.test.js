@@ -39,7 +39,7 @@ test('actual Postgres: chat personal delegation, human-only activation, RLS, rev
  try {
   await db.exec(bootstrap);
   await db.exec(`create or replace function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;`);
-  for(const file of ['20261108112613_activity_email.sql','20261108113751_chat_email_delegation.sql']) await db.exec(await readFile(new URL('../../supabase/migrations/'+file,import.meta.url),'utf8'));
+  for(const file of ['20261108123140_activity_email.sql','20261108123201_chat_email_delegation.sql']) await db.exec(await readFile(new URL('../../supabase/migrations/'+file,import.meta.url),'utf8'));
   await db.exec(`insert into public.permessi_utente select '${A}',id from public.permessi; insert into public.permessi_utente select '${B}',id from public.permessi;`);
   async function as(role,user,sql,params=[]){
    await db.exec(`set role ${role}; select set_config('request.jwt.claim.sub','${user}',false);`);

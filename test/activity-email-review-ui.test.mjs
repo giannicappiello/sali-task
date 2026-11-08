@@ -12,6 +12,8 @@ const { default: React, act }=await import('react');
 const { createRoot }=await import('react-dom/client');
 const require=createRequire(import.meta.url);
 let source=await readFile(new URL('../src/pages/AIAssistant/OnlineConnection.jsx',import.meta.url),'utf8');
+const requestSource=source.slice(source.indexOf('async function brainRequest('),source.indexOf('const authorization='));
+const realClientWithFetch=fetchMock=>new Function('fetch',requestSource+';return brainRequest;')(fetchMock);
 source=source.replace(/import \{createClient\} from '@supabase\/supabase-js';/, 'const createClient = () => { throw new Error("No real authentication in fixture"); };')
  .replace(/import \{useAuth\} from '[^']+';/, 'const useAuth = () => globalThis.reviewFixture.auth;')
  .replace(/import \{\s*useLocation\s*\} from '[^']+';/, 'const useLocation = () => ({search: globalThis.reviewFixture.search});')
@@ -137,4 +139,55 @@ test('active delegation supports explicit human revocation only in server revoke
   assert.deepEqual(calls.filter(c=>c.action==='decide'),[{action:'decide',receipt:'receipt-delegation-1',decision:'reject'}]);
   assert.match(host.textContent,/La delega non risulta attiva/);assert.equal(button('Revoca delega email'),undefined);
  }finally{await cleanup();}
+});
+
+for(const kind of ['email','email-delegation']) test(`${kind} transport gate 409 is definitive: explicit retry only and no duplicate writes`,async()=>{
+ let ready=false,decisions=0,writes=0;const receipts=[];
+ const client=realClientWithFetch(async(url,options)=>{
+  const input=JSON.parse(options.body);
+  if(input.action==='confirmation')return {ok:true,status:200,json:async()=>kind==='email'?prepared(input.id):delegationPrepared()};
+  decisions++;receipts.push(input.receipt);
+  if(!ready)return {ok:false,status:409,json:async()=>({success:false,code:'EMAIL_TRANSPORT_NOT_READY',error:'SECRET_RAW_PROVIDER_DETAIL'})};
+  writes++;
+  return {ok:true,status:200,json:async()=>kind==='email'?{email:{...proposal('mail-1'),status:'queued'}}:{delegation:{...delegation,status:'active'}}};
+ });
+ try{
+  await mount(client,kind,kind==='email'?'mail-1':'delegation-1');
+  const label=kind==='email'?'Conferma e invia email':authorize;
+  if(kind==='email-delegation')await consent();
+  await click(label,true);
+  assert.equal(decisions,1);assert.equal(writes,0);
+  assert.match(host.textContent,/servizio email non è ancora pronto/);assert.match(host.textContent,/Nessuna email è stata accodata|nessuna email è stata accodata/);
+  assert.doesNotMatch(host.textContent,/SECRET_RAW_PROVIDER_DETAIL|Esito.*da verificare/);
+  assert.equal(button(label).disabled,false);
+  if(kind==='email-delegation'){assert.equal(host.querySelector('input').checked,true);assert.match(host.textContent,/delega non è stata attivata/);}
+  await tick();assert.equal(decisions,1);
+  await click(label,true);assert.equal(decisions,2);assert.equal(writes,0);
+  ready=true;await click(label,true);assert.equal(decisions,3);assert.equal(writes,1);
+  assert.equal(new Set(receipts).size,1);
+ }finally{await cleanup();}
+});
+
+test('only exact HTTP 409 and known code allow retry; arbitrary server details stay hidden',async()=>{
+ for(const response of [
+  {status:500,code:'EMAIL_TRANSPORT_NOT_READY'},
+  {status:409,code:'SOME_OTHER_FAILURE'},
+ ]){
+  let decisions=0;
+  const client=realClientWithFetch(async(url,options)=>{
+   const input=JSON.parse(options.body);
+   if(input.action==='confirmation')return {ok:true,status:200,json:async()=>prepared(input.id)};
+   decisions++;return {ok:false,status:response.status,json:async()=>({success:false,code:response.code,error:'PRIVATE_CONFIGURATION_VALUE'})};
+  });
+  try{
+   await mount(client);await click('Conferma e invia email');
+   assert.match(host.textContent,/Esito da verificare/);assert.doesNotMatch(host.textContent,/PRIVATE_CONFIGURATION_VALUE|Nessuna email è stata accodata/);
+   assert.equal(button('Conferma e invia email').disabled,true);await click('Conferma e invia email');assert.equal(decisions,1);
+  }finally{await cleanup();}
+ }
+});
+
+test('unknown confirmation read errors do not render arbitrary server messages',async()=>{
+ const client=realClientWithFetch(async()=>({ok:false,status:500,json:async()=>({success:false,error:'PRIVATE_READ_ERROR_DETAIL'})}));
+ try{await mount(client);assert.doesNotMatch(host.textContent,/PRIVATE_READ_ERROR_DETAIL/);assert.match(host.textContent,/Operazione non completata/);assert.equal(button('Conferma e invia email'),undefined);}finally{await cleanup();}
 });

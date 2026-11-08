@@ -70,19 +70,43 @@ export async function processNextActivityEmailJob({supabase,smtp,workerId,isPerm
   }
 }
 
-export async function triggerActivityEmailWorker({fetchImpl=fetch}={}) {
-  const url = String(globalThis.process?.env?.ARUBA_EMAIL_WORKER_URL || '').trim();
-  const secret = String(globalThis.process?.env?.ARUBA_EMAIL_WORKER_SECRET || '').trim();
-  if (!url || !secret) return {status:'not_configured'};
+// Read-only readiness check. Never return URLs, secrets or provider diagnostics.
+export async function getActivityEmailTransport({fetchImpl=fetch,environment=globalThis.process?.env || {}}={}) {
+  const url = String(environment.ARUBA_EMAIL_WORKER_URL || '').trim();
+  const secret = String(environment.ARUBA_EMAIL_WORKER_SECRET || '').trim();
+  if (!url || !secret) return {ready:false,status:'not_configured'};
   try {
     const capabilityUrl = new URL(url);
+    if (capabilityUrl.protocol !== 'https:') return {ready:false,status:'unsupported'};
     capabilityUrl.searchParams.set('action','activity_email_capabilities');
-    const headers = {'X-Progre-Worker-Secret':secret};
-    const response = await fetchImpl(capabilityUrl.toString(),{method:'GET',headers,redirect:'error',signal:AbortSignal.timeout(15000)});
+    const response = await fetchImpl(capabilityUrl.toString(),{method:'GET',
+      headers:{'X-Progre-Worker-Secret':secret},redirect:'error',signal:AbortSignal.timeout(15000)});
+    if (!response.ok) return {ready:false,status:'unsupported'};
     const capability = await response.json();
-    if (!response.ok || capability.activity_email_protocol !== 1) return {status:'unsupported'};
-    if (capability.queue_enabled !== true) return {status:'paused'};
-    const sent = await fetchImpl(url,{method:'POST',headers:{...headers,'Content-Type':'application/json'},
+    if (capability.activity_email_protocol !== 1) return {ready:false,status:'unsupported'};
+    if (capability.queue_enabled !== true) return {ready:false,status:'paused'};
+    return {ready:true,status:'ready'};
+  } catch {
+    return {ready:false,status:'unavailable'};
+  }
+}
+
+export async function requireActivityEmailTransport(check=getActivityEmailTransport) {
+  let transport;
+  try { transport = await check(); } catch { transport = {ready:false,status:'unavailable'}; }
+  if (transport?.ready !== true || transport?.status !== 'ready') {
+    throw Object.assign(new Error('Servizio email non pronto. Occorre aggiornare o ripristinare il trasporto Workspace prima di autorizzare o accodare invii. La proposta non è stata modificata.'),
+      {status:409,code:'EMAIL_TRANSPORT_NOT_READY'});
+  }
+  return transport;
+}
+
+export async function triggerActivityEmailWorker({fetchImpl=fetch,environment=globalThis.process?.env || {}}={}) {
+  const transport = await getActivityEmailTransport({fetchImpl,environment});
+  if (!transport.ready) return {status:transport.status};
+  try {
+    const sent = await fetchImpl(String(environment.ARUBA_EMAIL_WORKER_URL).trim(),{method:'POST',
+      headers:{'X-Progre-Worker-Secret':String(environment.ARUBA_EMAIL_WORKER_SECRET).trim(),'Content-Type':'application/json'},
       redirect:'error',body:JSON.stringify({action:'run_activity'}),signal:AbortSignal.timeout(300000)});
     const result = await sent.json();
     if (!sent.ok || result.status !== 'ok') return {status:'uncertain'};

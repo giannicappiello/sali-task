@@ -14,21 +14,21 @@ test('chat email tools do not require tasks or activity access and cannot activa
  assert.deepEqual(chatEmailTools({...auth,capabilities:{internal_data:false}}),{});
 });
 test('prepare and delegation proposals never dispatch',async()=>{
- let dispatch=0;const tools=chatEmailTools(auth,{service:{prepareChatEmail:async()=>({id,status:'proposed'}),proposeChatEmailDelegation:async()=>({id,status:'proposed'})},schedule:()=>dispatch++});
+ let dispatch=0;const tools=chatEmailTools(auth,{transport:async()=>({ready:true,status:'ready'}),service:{prepareChatEmail:async()=>({id,status:'proposed'}),proposeChatEmailDelegation:async()=>({id,status:'proposed'})},schedule:()=>dispatch++});
  const draft=await tools.WORKSPACE_EMAIL_PREPARE.execute({recipient:'user@example.invalid',subject:'S',body:'B',idempotencyKey:id});assert.equal(draft.sent,false);
  const proposal=await tools.WORKSPACE_EMAIL_DELEGATION_PROPOSE.execute({});assert.equal(proposal.enabled,false);assert.equal(proposal.requiresHuman,true);assert.equal(proposal.reviewKind,'email-delegation');assert.equal(dispatch,0);
 });
 test('denied delegated send does not fall back to a human approval or dispatch',async()=>{
- let dispatch=0;const tools=chatEmailTools(auth,{service:{sendChatEmail:async()=>{throw Object.assign(Error('EMAIL_DELEGATION_REQUIRED'),{status:403});}},schedule:()=>dispatch++});
+ let dispatch=0;const tools=chatEmailTools(auth,{transport:async()=>({ready:true,status:'ready'}),service:{sendChatEmail:async()=>{throw Object.assign(Error('EMAIL_DELEGATION_REQUIRED'),{status:403});}},schedule:()=>dispatch++});
  await assert.rejects(tools.WORKSPACE_EMAIL_SEND.execute({id,expectedHash:hash}),/DELEGATION_REQUIRED/);assert.equal(dispatch,0);
 });
 test('delegated send preserves exact id/hash and reports acceptance truthfully',async()=>{
- let observed;const tools=chatEmailTools(auth,{service:{sendChatEmail:async(_auth,input)=>{observed=input;return {id,status:'accepted'};}},schedule:()=>undefined});
+ let observed;const tools=chatEmailTools(auth,{transport:async()=>({ready:true,status:'ready'}),service:{sendChatEmail:async(_auth,input)=>{observed=input;return {id,status:'accepted'};}},schedule:()=>undefined});
  const value=await tools.WORKSPACE_EMAIL_SEND.execute({id,expectedHash:hash});assert.deepEqual(observed,{id,expectedHash:hash});assert.equal(value.accepted,true);assert.equal(value.deliveryVerified,false);
 });
 function setupDelegation(status='proposed') {
  const row={id,author_id:id,status,policy_version:'chat-email-v1',policy_hash:hash};let decisions=0;
- const dependencies={authorize:async()=>auth,catalog:()=>({}),receiptKey:'test-key',chatService:{getChatEmailDelegation:async()=>row,hashChatEmailDelegation:()=>hash,decideChatEmailDelegation:async(_auth,input)=>{decisions++;return {...row,status:input.confirm?'active':'revoked'};}}};
+ const dependencies={transport:async()=>({ready:true,status:'ready'}),authorize:async()=>auth,catalog:()=>({}),receiptKey:'test-key',chatService:{getChatEmailDelegation:async()=>row,hashChatEmailDelegation:()=>hash,decideChatEmailDelegation:async(_auth,input)=>{decisions++;return {...row,status:input.confirm?'active':'revoked'};}}};
  return {row,dependencies,count:()=>decisions};
 }
 test('delegation preview does not activate; signed human decision calls only dedicated service',async()=>{

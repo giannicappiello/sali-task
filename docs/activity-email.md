@@ -40,7 +40,7 @@ La conferma ritorna lo stato persistito subito; il risveglio del worker viene ge
 
 ## Rilascio, da autorizzare separatamente
 
-1. Rivedere e applicare `supabase/migrations/20261108112613_activity_email.sql` nell'ambiente scelto. La migrazione include RLS, grant minimi, trigger di immutabilita e funzioni worker service-only.
+1. Rivedere e applicare `supabase/migrations/20261108123140_activity_email.sql` nell'ambiente scelto. La migrazione include RLS, grant minimi, trigger di immutabilita e funzioni worker service-only.
 2. Pubblicare backend e frontend della stessa revisione.
 3. Se il trasporto attivo e Aruba, aggiornare solo `hosting/aruba-order-email/worker.php` conservando la configurazione e il mittente esistenti. Non usare richieste POST per interrogare vecchi worker.
 4. Verificare in sola lettura la capability aggiornata e lo stato operativo del worker. Nessun controllo deve drenare altre code.

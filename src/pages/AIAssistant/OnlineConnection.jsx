@@ -6,7 +6,12 @@ import './second-brain.css';
 
 async function brainRequest(session,body,online=false){
  const response=await fetch(online?'/api/second-brain/oauth/connection':'/api/mexal/automation?route=second-brain',{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${session.access_token}`},body:JSON.stringify(body)});
- const result=await response.json();if(!response.ok||result.success===false)throw Error(result.error||'Collegamento non disponibile.');return result;
+ const result=await response.json();
+ if(!response.ok||result.success===false){
+  const transportBlocked=response.status===409&&result.code==='EMAIL_TRANSPORT_NOT_READY';
+  throw Object.assign(new Error(transportBlocked?'Il servizio email non è ancora pronto. Riprova dopo il suo aggiornamento.':'Operazione non completata. Riapri la pagina o verifica il collegamento.'),{status:response.status,code:transportBlocked?'EMAIL_TRANSPORT_NOT_READY':undefined});
+ }
+ return result;
 }
 const authorization=()=>Object.fromEntries([...new URLSearchParams(location.search)].filter(([key])=>['client_id','redirect_uri','response_type','code_challenge','code_challenge_method','state','resource','scope'].includes(key)));
 export function OnlineConsent(){
@@ -70,8 +75,17 @@ function OnlineReviewContent({ session, kind, id }) {
   try {
    const result = await brainRequest(session, { action: 'decide', receipt: prepared.receipt, decision });
    if (live.current) setOutcome(result);
-  } catch {
-   if (live.current) setError(isDelegation
+  } catch (failure) {
+   if (!live.current) return;
+   if (failure.status === 409 && failure.code === 'EMAIL_TRANSPORT_NOT_READY' && decision === 'confirm' && (isDelegation || kind === 'email')) {
+    pending.current = false;
+    setSubmitted(false);
+    setError(isDelegation
+     ? 'Il servizio email non è ancora pronto. La delega non è stata attivata e nessuna email è stata accodata. Riprova dopo l’aggiornamento del servizio.'
+     : 'Il servizio email non è ancora pronto. Nessuna email è stata accodata. Riprova dopo l’aggiornamento del servizio.');
+    return;
+   }
+   setError(isDelegation
     ? 'Esito dell’autorizzazione da verificare. Riapri questo riepilogo o chiedi a Progre AI di leggere lo stato della delega prima di ripetere.'
     : 'Esito da verificare nello storico prima di ripetere. Riapri questo riepilogo o chiedi a Progre AI di leggere lo stato.');
   }

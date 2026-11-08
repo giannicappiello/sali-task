@@ -1,3 +1,4 @@
+import { requireActivityEmailTransport } from './activity-email-worker.js';
 import { waitUntil } from '@vercel/functions';
 import process from 'node:process';
 import { authorizeAIRequest } from '../ai/access.js';
@@ -76,6 +77,7 @@ export async function activityEmailRequest(req, dependencies = {}) {
   const current = await service.getActivityEmail(auth, receipt.id);
   if (current.author_id !== auth.profile.id || current.via_ai) throw fail('Proposta email non confermabile da questa schermata.', 403);
   if (service.hashActivityEmail(current) !== receipt.hash) throw fail('La proposta email è cambiata. Riapri il riepilogo.', 409);
+  if (body.decision === 'confirm') await requireActivityEmailTransport(dependencies.transport);
   const email = await service.decideActivityEmail(auth, { id: receipt.id, confirm: body.decision === 'confirm', expectedHash: receipt.hash });
   return { email, dispatch: scheduleActivityEmailDispatch(email, { dispatch: dependencies.dispatch, schedule: dependencies.schedule }), sent: false };
 }

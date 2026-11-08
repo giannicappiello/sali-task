@@ -11,7 +11,7 @@ test('email tools only expose proposal and scoped reads, not direct send/decisio
 });
 test('Brain review receipt queues only after human decision and returns no delivery claim',async()=>{
  let sent=0,decisions=0;const row={id,author_id:id,via_ai:true,status:'proposed',payload_hash:hash};
- const dependencies={authorize:async()=>auth,catalog:()=>({}),receiptKey:'test-key',dispatchActivityEmail:async()=>{sent++;return {status:'ok'};},emailService:{getActivityEmail:async()=>row,hashActivityEmail:()=>hash,decideActivityEmail:async(_auth,input)=>{decisions++;assert.equal(input.expectedHash,hash);return {...row,status:'queued'};}}};
+ const dependencies={transport:async()=>({ready:true,status:'ready'}),authorize:async()=>auth,catalog:()=>({}),receiptKey:'test-key',dispatchActivityEmail:async()=>{sent++;return {status:'ok'};},emailService:{getActivityEmail:async()=>row,hashActivityEmail:()=>hash,decideActivityEmail:async(_auth,input)=>{decisions++;assert.equal(input.expectedHash,hash);return {...row,status:'queued'};}}};
  const preview=await handleSecondBrain({method:'POST',body:{action:'confirmation',kind:'email',id}},dependencies);assert(preview.receipt);assert.equal(decisions,0);assert.equal(sent,0);
  const result=await handleSecondBrain({method:'POST',body:{action:'decide',receipt:preview.receipt,decision:'confirm'}},dependencies);assert.equal(result.email.status,'queued');assert.equal(result.sent,false);assert.equal(decisions,1);assert.equal(sent,1);
 });

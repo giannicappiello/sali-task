@@ -1,3 +1,4 @@
+import { requireActivityEmailTransport } from '../email/activity-email-worker.js';
 import { getChatEmail, getChatEmailDelegation, decideChatEmailDelegation, decideChatEmailHuman, hashChatEmailDelegation } from '../email/chat-email-service.js';
 import { canReadModule } from '../ai/operational-read.js';
 import { getActivityEmail, decideActivityEmail, hashActivityEmail } from '../email/activity-email-service.js';
@@ -115,9 +116,11 @@ export async function handleSecondBrain(req, dependencies = {}) {
   if ((receipt.kind === 'email' ? emailService.hashActivityEmail(proposal) : receipt.kind === 'email-delegation' ? chatService.hashChatEmailDelegation(proposal) : hash(proposal)) !== receipt.hash) throw fail('La proposta e cambiata. Riaprire il riepilogo.', 409);
   if (receipt.kind === 'email-delegation') {
     if (receipt.proposalStatus !== proposal.status) throw fail('La delega e cambiata. Riapri il riepilogo.', 409);
+    if (body.decision === 'confirm') await requireActivityEmailTransport(dependencies.transport);
     return { delegation: await chatService.decideChatEmailDelegation(auth, { id: receipt.id, confirm: body.decision === 'confirm', expectedHash: receipt.hash }) };
   }
   if (receipt.kind === 'email') {
+    if (body.decision === 'confirm') await requireActivityEmailTransport(dependencies.transport);
     const decideEmail = proposal.source_kind === 'chat' ? chatService.decideChatEmailHuman : emailService.decideActivityEmail;
     const email = await decideEmail(auth, { id: receipt.id, confirm: body.decision === 'confirm', expectedHash: receipt.hash });
     const { scheduleActivityEmailDispatch } = await import('../email/activity-email-handler.js');

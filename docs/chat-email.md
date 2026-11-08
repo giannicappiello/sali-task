@@ -34,14 +34,18 @@ Il servizio impedisce la modifica del testo dopo preparazione, la conferma di em
 
 Il worker condiviso riusa Aruba PHP oppure SMTP, isolando il protocollo da ordini, DDT e report commerciali. Accodamento non e invio; `accepted` indica accettazione del server e non prova consegna. Gli esiti ambigui diventano `uncertain` e non sono mai rimessi automaticamente in coda.
 
-## Rilascio e decisioni ancora necessarie
+## Disponibilita del trasporto
 
-Questa implementazione locale non abilita da sola il servizio online. Occorrono:
+Il rilascio controlla la capability del worker con una richiesta GET che non elabora code. Finche Aruba non supporta il protocollo email o la coda e sospesa, la capability indica invio non disponibile. Le nuove conferme di invio e l'attivazione della delega sono bloccate prima di accodare messaggi. Lettura degli esiti, rifiuto delle proposte e revoca restano disponibili. Questa protezione consente di distribuire il codice senza promettere un invio operativo prima dell'aggiornamento del worker.
 
-- Approvazione del rilascio di backend/frontend e migrazioni nel Workspace scelto.
+## Rilascio e attivazione
+
+Il codice non abilita da solo il servizio di invio. Il rilascio richiede:
+
+- Rilascio coordinato di backend/frontend e delle sole migrazioni previste nel Workspace scelto.
 - Aggiornamento controllato del worker email, conservando mittente e configurazione segreta gia esistenti.
 - Verifica del catalogo plugin; se obsoleto, aggiornare le azioni della connessione personale, non i permessi globali.
 - Attivazione personale della delega mediante la pagina di consenso. L'assistente non puo eseguirla al posto del titolare.
 - Eventuale destinatario e testo esplicitamente approvati per un test reale. Durante sviluppo si usano esclusivamente mock e fixture locali.
 
-Nessun token o ruolo reale viene modificato, nessuna email reale e inviata, nessuna migrazione di produzione e applicata durante lo sviluppo.
+Le migrazioni 20261108123140_activity_email e 20261108123201_chat_email_delegation sono state applicate l'8 novembre 2026. RLS e grant verificati; al controllo iniziale risultavano zero email, tentativi, deleghe e assegnazioni dei nuovi permessi. Nessun token o ruolo reale e stato modificato e nessuna email reale e stata inviata. Il worker Aruba richiede ancora l'aggiornamento prima che il gate consenta nuovi invii o attivazioni.

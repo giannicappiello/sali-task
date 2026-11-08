@@ -27,7 +27,7 @@ test('history fetch never selects delivery tokens', async()=>{
  const query={select:columns=>{assert.ok(!columns.includes('lock_token'));assert.ok(!columns.includes('worker_id'));return query;},eq:()=>query,maybeSingle:async()=>({data:{id}})};
  assert.equal((await getActivityEmail({scoped:{from:()=>query}},id)).id,id);
 });
-const migration = await readFile(new URL('../../supabase/migrations/20261108112613_activity_email.sql',import.meta.url),'utf8');
+const migration = await readFile(new URL('../../supabase/migrations/20261108123140_activity_email.sql',import.meta.url),'utf8');
 test('schema boundaries: no role grants, separate private attempts, RLS and irreversible claim',()=>{
  assert.match(migration,/alter table public.workspace_emails enable row level security/);
  assert.match(migration,/revoke all on public.workspace_emails,public.workspace_email_delivery from public,anon,authenticated/);

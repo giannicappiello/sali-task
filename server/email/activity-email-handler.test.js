@@ -8,7 +8,7 @@ const hash='a'.repeat(64), key='local-test-key';
 function fixture(overrides={}) {
  const email={id,task_id:taskId,author_id:id,via_ai:false,status:'proposed',recipient:'test@example.invalid',subject:'Sollecito',body:'Testo approvato',payload_hash:hash,...overrides};
  const calls=[];
- return {email,calls,deps:{authorize:async(_req,options)=>{calls.push(['authorize',options]);return {profile:{id,nome:'Test'}};},receiptKey:key,dispatch:async()=>{calls.push(['dispatch']);return {status:'ok'};},services:{
+ return {email,calls,deps:{transport:async()=>({ready:true,status:'ready'}),authorize:async(_req,options)=>{calls.push(['authorize',options]);return {profile:{id,nome:'Test'}};},receiptKey:key,dispatch:async()=>{calls.push(['dispatch']);return {status:'ok'};},services:{
   getActivityEmailContext:async()=>({task:{id:taskId},permissions:{canPropose:true,canConfirm:true},emails:[]}),
   listActivityEmails:async()=>({emails:[email],nextOffset:null}),
   getActivityEmail:async()=>email,hashActivityEmail:row=>row.payload_hash,

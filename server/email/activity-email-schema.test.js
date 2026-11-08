@@ -38,7 +38,7 @@ test('Postgres fixture: actual RLS, immutable drafts, AI gates, atomic claims, n
  const db=new PGlite();
  try {
  await db.exec(bootstrap);
- await db.exec(await readFile(new URL('../../supabase/migrations/20261108112613_activity_email.sql',import.meta.url),'utf8'));
+ await db.exec(await readFile(new URL('../../supabase/migrations/20261108123140_activity_email.sql',import.meta.url),'utf8'));
  await db.exec(`insert into public.permessi_utente select '${A}',id from public.permessi; insert into public.permessi_utente select '${B}',id from public.permessi;`);
  async function as(role,user,sql,params=[]){
   await db.exec(`set role ${role}; select set_config('test.user','${user}',false);`);

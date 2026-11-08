@@ -7,6 +7,7 @@ export const DATASETS = Object.freeze({
 export function canReadDataset(auth, name) {
  const descriptor=Object.hasOwn(DATASETS,name) ? DATASETS[name] : null;
  if(!descriptor || auth?.capabilities?.internal_data !== true)return false;
+ if(Array.isArray(auth.capabilities.allowed_modules) && !auth.capabilities.allowed_modules.includes(descriptor.module))return false;
  if(auth.profile?.ruoli?.amministratore_workspace === true)return true;
  return (auth.access?.modules || []).includes(descriptor.module) && (!Array.isArray(auth.capabilities.allowed_modules) || auth.capabilities.allowed_modules.includes(descriptor.module));
 }

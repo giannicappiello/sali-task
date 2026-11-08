@@ -1,0 +1,12 @@
+.activity-email-panel{margin-top:16px;border:1px solid #d7e3f3;border-radius:14px;background:#f8faff;padding:14px;min-width:0;overflow-wrap:anywhere}
+.activity-email-panel h3,.activity-email-panel h4{margin:0 0 8px}.activity-email-panel p{font-size:13px;line-height:1.5}
+.activity-email-compose{display:grid;gap:7px;margin:12px 0;padding:12px;border:1px solid #cbd5e1;border-radius:10px;min-width:0}
+.activity-email-compose legend{padding:0 6px;font-weight:600}.activity-email-compose textarea{width:100%;min-height:140px;resize:vertical}
+.activity-email-panel button{white-space:normal;min-height:40px;max-width:100%}.activity-email-panel button:disabled{opacity:.6;cursor:not-allowed}
+.activity-email-panel :focus-visible{outline:3px solid #126bff;outline-offset:3px}
+.activity-email-content{display:grid;grid-template-columns:110px minmax(0,1fr);gap:8px;margin:12px 0;font-size:13px}.activity-email-content dt{font-weight:600}.activity-email-content dd{margin:0;overflow-wrap:anywhere}.activity-email-body{white-space:pre-wrap;line-height:1.5}
+.activity-email-review{border:2px solid #126bff;border-radius:10px;background:white;padding:14px;margin:12px 0}
+.activity-email-actions{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin:10px 0}.activity-email-actions h4{margin:0;flex:1}
+.activity-email-history{list-style:none;padding:0;margin:0}.activity-email-history>li{padding:12px 0;border-top:1px solid #d7e3f3}.activity-email-history summary{cursor:pointer;font-size:13px;line-height:1.5}.activity-email-history li>button{margin-top:8px}
+.activity-email-panel .activity-email-error{color:#9f1239;background:#fff1f2;border-radius:6px;padding:8px}
+@media(max-width:600px){.activity-email-content{grid-template-columns:minmax(0,1fr);gap:4px}.activity-email-content dd{margin-bottom:8px}.activity-email-actions>button{flex:1 1 100%}.activity-email-panel{padding:10px}}

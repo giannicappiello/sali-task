@@ -1,3 +1,4 @@
+import {claimActivityForHttpWorker,activityWorkerAction} from '../../../server/email/activity-email-worker.js';
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import {Buffer} from 'node:buffer';
 import process from 'node:process';
@@ -46,13 +47,18 @@ function attachmentPayload(attachment) {
   };
 }
 
-export default async function handler(req, res) {
+export function createEmailWorkerHandler({getClient=adminClient}={}) {
+return async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Metodo non consentito." });
 
   try {
     if (!authorized(req)) return res.status(401).json({ error: "Worker non autorizzato." });
-    const supabase = adminClient();
+    const supabase = getClient();
     const action = String(req.body?.action || "").trim().toLowerCase();
+
+    if (String(req.body?.email_id || '').startsWith('activity:')) {
+      return res.status(200).json(await activityWorkerAction(supabase,req.body));
+    }
 
     if(String(req.body?.email_id||'').startsWith('report:')) {
       return res.status(200).json(await commercialWorkerAction(supabase,req.body));
@@ -60,11 +66,17 @@ export default async function handler(req, res) {
 
     if (action === "claim") {
       const id = workerId(req);
-      if(req.body?.report_protocol===1) {
+      if(req.body?.activity_only === true && req.body?.activity_email_protocol !== 1) return res.status(400).json({error:'Activity protocol required.'});
+      if(req.body?.activity_only !== true && req.body?.report_protocol===1) {
         const report=await claimCommercialEmail(supabase,id);
         if(report)return res.status(200).json(report);
       }
       if(req.body?.reports_only===true)return res.status(200).json({status:'idle'});
+      if(req.body?.activity_email_protocol === 1) {
+        const activity = await claimActivityForHttpWorker(supabase,id);
+        if(activity) return res.status(200).json(activity);
+      }
+      if(req.body?.activity_only === true) return res.status(200).json({status:'idle'});
       const legacyAruba = req.body?.shipment_protocol == null && String(req.headers['x-worker-source'] || '') === 'aruba';
       if (req.body?.shipment_protocol === 1 || legacyAruba) {
         const shipment = await claimShipmentForHttpWorker(supabase,id,{legacyAruba});
@@ -146,9 +158,13 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "Azione non riconosciuta." });
   } catch (error) {
     console.error("Aruba order email worker API error", {
-      error: error.message,
+      error: String(req.body?.email_id || '').startsWith('activity:') || req.body?.activity_email_protocol === 1 ? 'Activity email worker failed' : error.message,
       action: req.body?.action || null,
     });
+    if (String(req.body?.email_id || '').startsWith('activity:') || req.body?.activity_email_protocol === 1) return res.status(500).json({error:'Activity email worker failed.'});
     return res.status(500).json({ error: error.message || "Errore worker email." });
   }
+};
 }
+
+export default createEmailWorkerHandler();

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { financeCatalog, checkedFinancePath, mexalFinanceTools } from './mexal-finance.js';
+import { financeCatalog, checkedFinancePath, mexalFinanceTools, financePage } from './mexal-finance.js';
 import { mexalArchiveTools } from './mexal-archive.js';
 import { memorySnapshot, sourceMemoryTools } from './source-memory.js';
 import { objectSchema } from './schema.js';
@@ -36,11 +36,29 @@ test('finance reuses the connection, rechecks live contract, paginates, and pres
  const cat=await tools.MEXAL_FINANCE_CATALOG.execute({year:2026});
  const id=cat.capabilities.find(x=>x.pattern==='/scadenzario').id;
  const result=await tools.MEXAL_FINANCE_READ.execute({year:2026,capabilityId:id,path:'/scadenzario',tipo:'P',max:10,next:'opaque+cursor'});
- assert.strictEqual(result.payload,payload);assert.equal(result.payload.items[0].amount,'123.4567');
+ assert.deepEqual(result.payload,payload);assert.equal(result.payload.items[0].amount,'123.4567');
  assert(calls.at(-1).includes('next=opaque%2Bcursor'));assert(calls.at(-1).includes('tipo=P'));assert.equal(calls.filter(p=>p==='/help').length,2);
  await assert.rejects(tools.MEXAL_FINANCE_READ.execute({capabilityId:'0'.repeat(64),path:'/scadenzario'}),{status:403});
  const blocked=mexalFinanceTools(admin,{clientForYear:()=>({getJson:async path=>path==='/help'?help:{password:'never-return'}})});
  await assert.rejects(blocked.MEXAL_FINANCE_READ.execute({capabilityId:id,path:'/scadenzario'}),{status:422});
+});
+test('connector bounds responses when Mexal ignores max, preserving every official row and upstream cursor',()=>{
+ const payload={dati:Array.from({length:207},(_,id)=>({id,amount:'12.3456'})),data_ric_elab:'now',next:'vendor-cursor'};
+ const before=JSON.stringify(payload),ids=[];let offset=0,snapshot;
+ do {
+  const p=financePage(payload,{max:50,offset,snapshot});
+  snapshot=p.pagination.snapshot;assert(p.payload.dati.length<=50);assert.equal(p.pagination.sourcePageRows,207);assert.equal(p.pagination.upstreamNext,'vendor-cursor');
+  ids.push(...p.payload.dati.map(r=>r.id));offset=p.pagination.nextOffset;
+ }while(offset!==null);
+ assert.equal(ids.length,207);assert.equal(new Set(ids).size,207);assert.equal(JSON.stringify(payload),before);
+ assert.throws(()=>financePage({...payload,dati:payload.dati.slice(1)},{max:50,offset:50,snapshot}),{status:409});
+ assert.equal(financePage({balance:'12.3456'}).pagination,null);
+ const a=memorySnapshot('MEXAL_FINANCE_READ',{},financePage(payload,{max:1}));
+ const b=memorySnapshot('MEXAL_FINANCE_READ',{},financePage({...payload,data_ric_elab:'later'},{max:1}));
+ assert.equal(a.snapshot,b.snapshot);
+});
+test('financial discovery includes accounts and routes described as accounting data',()=>{
+ assert.equal(financeCatalog([{method:'GET',regexp:'^/conti/{0,1}$'},{method:'GET',regexp:'^/pdc/{0,1}$',descrizione:'piano dei conti'}]).length,2);
 });
 test('complete archive reads retain personal RLS and fixed fields without recalculating amounts',async()=>{
  const calls=[];const q={then(resolve){return Promise.resolve({data:[{id:'a',totale_imponibile:'12.3456'},{id:'b'},{id:'c'}]}).then(resolve);}};

@@ -18,6 +18,8 @@ Si riusa `buildMexalClient`, lo stesso client e le stesse credenziali server gi�
 
 Lo storico memorizzato non è il dato corrente: rileggerlo da Mexal quando serve un saldo aggiornato. Riacquisire lo stesso snapshot della stessa pagina riusa le chiavi memoria; versioni diverse restano copie storiche distinte. Le copie sono personali per evitare di condividere dati finanziari/HR con utenti non autorizzati alla fonte. Nessun import periodico o salvataggio automatico è stato attivato.
 
+Per MEXAL_FINANCE_READ il connettore limita la risposta a `max` righe (default 50, massimo 100), anche se Mexal ignora il parametro. Percorrere prima `pagination.nextOffset` con lo stesso `snapshot` e cursore upstream. Esaurita quella pagina origine, usare `pagination.upstreamNext` con offset zero. Se le righe origine cambiano, viene restituito 409; nessun troncamento silenzioso. Il timestamp Mexal di elaborazione non invalida da solo le copie di memoria.
+
 La memoria non è un backup completo del gestionale: il flusso acquisisce ogni pagina esplicitamente letta e approvata. Per un archivio completo occorre percorrere tutti i cursori ufficiali e confermare le relative proposte. Le pagine troppo grandi sono rifiutate con invito a ridurre il limite; non sono troncate silenziosamente. In caso di errore durante la preparazione, la risposta conserva gli ID già creati e non li ritenta automaticamente.
 
 ## Perimetro economico richiesto
@@ -30,6 +32,8 @@ La memoria non è un backup completo del gestionale: il flusso acquisisce ogni p
 - **Bilancio**: saldi e dettagli conti, stato patrimoniale e conto economico devono provenire dal contratto o dall'export ufficiale pubblicato dall'installazione. Un catalogo privo di queste risorse non prova saldo zero: segnala un gap di integrazione. La memoria di tali report non ne cambia natura o stato di approvazione.
 
 ## Evidenze e limiti della verifica
+
+La verifica live dell'8 novembre ha confermato la connessione GRE/2026 e i nuovi strumenti con l'identità personale admin del richiedente. Il catalogo pubblica scadenzario, prima nota/testate/righe, banche, articoli/progressivi e movimenti di magazzino. La prima lettura scadenzario tipo P è riuscita e ha restituito 7.379 righe nella pagina origine nonostante max=1: da qui la paginazione aggiunta dal connettore. Non è ancora prova di esaurimento di tutto lo scadenzario, né di bilancio completo o flussi bancari riconciliati. Nessun import di quei dati in memoria è stato eseguito.
 
 Il codice locale non dispone delle variabili della connessione Mexal di produzione; sono riusate sul server dove sono già configurate. Non sono state estratte chiavi o credenziali per eseguire prove locali. Il catalogo finanziario effettivo dell'installazione deve quindi essere letto dopo il rilascio: i test con fixture dimostrano i controlli e il percorso, non la presenza live di bilancio, saldi o cassa. Sono gestite risposte JSON; export PDF/XBRL o report disponibili solo tramite servizi POST richiedono un adattatore specifico di sola lettura verificato, non esecuzione libera di programmi.
 

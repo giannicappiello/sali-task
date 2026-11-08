@@ -41,7 +41,7 @@ export async function mesDomainCall(auth, domain, operation, input = {}, transpo
 
 export function formulaReadTools(auth) {
   return {
-    MES_RESOURCE_COSTS: { description: 'Legge gli impianti e il costo fisso di lavorazione, con hash da usare nella proposta di modifica. Non ricalcola documenti storici.',
+    MES_RESOURCE_COSTS: { description: 'Legge gli impianti e il campo storico costoFissoProduzione: per STATION è il margine di guadagno auspicato per singola lavorazione, non un costo industriale né un ricavo. Importo una sola volta per lavorazione, indipendente dai turni. Conserva valori, nomi tecnici e hash; non ricalcola documenti storici.',
       inputSchema: jsonSchema({ type: 'object', additionalProperties: false, properties: {} }), execute: () => formulaCall(auth, 'resources') },
     FORMULA_LOOKUP: { description: 'Trova ID delle versioni formula dal codice o nome, prima di leggere o proporre una revisione.',
       inputSchema: jsonSchema({ type: 'object', additionalProperties: false, required: ['query'], properties: { query: { type: 'string', minLength: 2, maxLength: 160 } } }), execute: input => formulaCall(auth, 'lookup', input) },

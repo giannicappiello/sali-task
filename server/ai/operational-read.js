@@ -3,7 +3,7 @@ import { jsonSchema } from 'ai';
 const crmModules = { conto_terzi: 'crm_conto_terzi', b2b: 'crm_b2b', online: 'crm_online' };
 export function canReadModule(auth, modules) {
   if (auth.capabilities?.internal_data !== true) return false;
-  if (auth.profile?.ruoli?.amministratore_workspace === true) return true;
+  if (auth.profile?.ruoli?.amministratore_workspace === true) return modules.some(module => !Array.isArray(auth.capabilities.allowed_modules) || auth.capabilities.allowed_modules.includes(module));
   return modules.some(module => auth.access?.modules?.includes(module) && (!Array.isArray(auth.capabilities.allowed_modules) || auth.capabilities.allowed_modules.includes(module)));
 }
 function day(value) {

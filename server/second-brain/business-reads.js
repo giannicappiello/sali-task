@@ -1,4 +1,4 @@
-import { productionReportTools } from './production-report-reads.js';
+import { productionReportTools, requireAnalyticsScope } from './production-report-reads.js';
 import { logisticsReadTools } from './logistics-reads.js';
 import { canReadModule } from '../ai/operational-read.js';
 import { handleProgremesReadonlyRequest } from '../progremes-readonly-api.js';
@@ -33,7 +33,10 @@ export function businessReadTools(auth) {
     tools.CUSTOMER_REORDERS_READ={description:'Analizza riordini dall’intero storico fatture autorizzato, con limiti sul numero di clienti e prodotti restituiti.',effect:'read',inputSchema:objectSchema({}),execute:async()=>({source:'workspace_ai_customer_reorder_context',data:check(await auth.scoped.rpc('workspace_ai_customer_reorder_context',{p_customer_limit:80,p_product_limit:40}))})};
   }
   if(auth.capabilities.progremes&&canReadModule(auth,['progremes'])) {
-    tools.MES_READ={description:'Legge risorse ProgreMES autorizzate: produzioni, ODL, materiali e altri dati del contratto pubblico. Usa pagine e filtri supportati; nessuna scrittura.',effect:'read',inputSchema:objectSchema({resource:{type:'string',enum:PROGREMES_ALLOWED_RESOURCES},page:{type:'integer',minimum:1,maximum:100000},pageSize:{type:'integer',minimum:1,maximum:100},search:{type:'string',maxLength:160},articleCode:{type:'string',maxLength:100}},['resource']),execute:async input=>{
+    tools.MES_READ={description:'Legge risorse ProgreMES autorizzate: produzioni, ODL, materiali e altri dati del contratto pubblico. Usa solo i filtri supportati dalla risorsa; status e diagnostics non accettano paginazione. Per ore del turno e KPI ufficiali usare PRODUCTION_CONSUNTIVI_READ. Nessuna scrittura.',effect:'read',inputSchema:objectSchema({resource:{type:'string',enum:PROGREMES_ALLOWED_RESOURCES},page:{type:'integer',minimum:1,maximum:100000},pageSize:{type:'integer',minimum:1,maximum:100},search:{type:'string',maxLength:160},articleCode:{type:'string',maxLength:100},active:{type:'boolean'},updatedAfter:{type:'string',format:'date-time'},from:{type:'string',format:'date'},to:{type:'string',format:'date'},status:{type:'string',maxLength:64}},['resource']),execute:async input=>{
+      // The shared MES integration has no user/customer row mapping. Do not
+      // expand a restricted Workspace scope into a global upstream read.
+      if(!['status','diagnostics','diagnostics-health'].includes(input.resource))await requireAnalyticsScope(auth);
       let status=200,payload;
       const res={setHeader(){},status(value){status=value;return this;},json(value){payload=value;return this;}};
       await handleProgremesReadonlyRequest({method:'GET',headers:{authorization:`Bearer ${auth.token}`},query:input},res);

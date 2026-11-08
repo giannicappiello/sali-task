@@ -12,6 +12,7 @@ import { forecastOperations } from "./planned-timing.js";
 import { packagingBaseline, productDocuments, productRows } from "./packaging-evidence.js";
 import { materialConsumptionWithoutBulkTransfer } from "./material-consumption.js";
 import { validateHistoryPeriod } from "./history-period.js";
+import {stationObjective} from "./station-objective.js";
 export const number = (v) => v !== null && v !== undefined && v !== "" && Number.isFinite(Number(v)) ? Number(v) : null;
 export const sumKnown = (values) => values.length && values.every(v => number(v) !== null) ? values.reduce((s,v) => s + Number(v),0) : null;
 export const delta = (actual, planned) => number(actual) !== null && number(planned) !== null ? actual-planned : null;
@@ -171,7 +172,8 @@ export function calculateRecord(evidence,configuration,adjustment={},commercial=
   const plannedWashes=ops.filter(x=>Number(x.impiantoId)===w.machineId&&x.type==="Cleaning").length*share;
   const plannedWash=number(machine?.washCost)===null?null:plannedWashes*Number(machine.washCost);
   const actualWash=number(wash?.count)===null||number(machine?.washCost)===null?null:Number(wash.count)*Number(machine.washCost);
-  const gain=number(machine?.gainPerWork??machine?.gainPerShift);
+  const frozenObjective=evidence.baseline?.stationObjectives?.find(x=>Number(x.machineId)===Number(w.machineId));
+  const gain=number(frozenObjective?.objectivePerWork??machine?.gainPerWork??machine?.gainPerShift);
   return {...w,machine,plannedHours,actualHours,downtimeHours:stop,plannedPersonHours,actualPersonHours,personHoursInShifts,plannedLabor,actualLabor,
    mixingOperatorsCount,referenceShiftHours:shiftHours,plannedStandardShiftHours:plannedTurns===null?null:plannedTurns*8,actualStandardShiftHours:actualTurns===null?null:actualTurns*8,plannedTurns,actualTurns,plannedOvertimeHours,actualOvertimeHours,
    plannedCostPersonHours:fillingHistoricalMode&&!isStation?null:plannedCostPersonHours,actualCostPersonHours:fillingHistoricalMode&&!isStation?null:actualCostPersonHours,
@@ -244,11 +246,14 @@ export function calculateRecord(evidence,configuration,adjustment={},commercial=
  const plannedKnownSubtotal=knownSubtotal([plannedMaterialSummary.value,...(filling.length?[plannedPackagingCost]:[]),plannedLabor,plannedWash]);
  const oneStation=new Set(bulk.map(p=>p.machineId)).size===1;
  const plannedObjective=oneStation?sumKnown(bulk.map(p=>p.plannedGain)):null;
+ const objectiveCandidate=stationObjective({...evidence,phases,plannedObjective});
+ // Closed historical work requires its dedicated human-approved revision.
+ const objectiveView=closed&&evidence.baseline?.objectiveCalculationVersion!==1?(adjustment.objectiveRevision||{formulaPlannedTurns:null,plannedObjectivePerTurn:null,objectiveBasis:null,objectiveWarning:"Obiettivo per turno storico in attesa di ricalcolo approvato."}):objectiveCandidate;
  const actualObjective=oneStation?sumKnown(bulk.map(p=>p.actualGain)):null;
  const invoicedObjective=actualObjective!==null&&comparableCost!==null?actualObjective*invoicedQuantity/goodQuantity:null;
  if(bulk.length&&!oneStation)warnings.push("Margine per singola STATION non attribuibile: più STATION condividono il ricavo. Nessuna ripartizione automatica inventata.");
  return {...evidence,plannedPackaging,actualPackagingRows,configuration,phases,closed,warnings,forecastSource:forecast.source,reconstructed,recoveredConsumption,recoveredProducts,actualKnownSubtotal,plannedKnownSubtotal,plannedMaterialSummary,actualMaterialSummary,plannedMaterialCost,actualMaterialCost,plannedPackagingCost,actualPackagingCost,
-  adjustment,stationContext,stationHistory:historicalMode?history:null,stationHistoricalHourly:historicalMode?number(stationSettings?.laborHourly):null,
+  ...objectiveView,adjustment,stationContext,stationHistory:historicalMode?history:null,stationHistoricalHourly:historicalMode?number(stationSettings?.laborHourly):null,
   fillingContext,fillingHistory:fillingHistoricalMode?fillingHistory:null,fillingHistoricalHourly:fillingHistoricalMode?number(fillingSettings?.laborHourly):null,
   fillingUnitLabor:unitLabor,
   laborCriteria:[rulesSummary(historicalMode?stationSettings:settings)[0],rulesSummary(fillingHistoricalMode?fillingSettings:settings)[1],rulesSummary(settings)[2]],plannedObjective,invoicedObjective,plannedObjectiveVariance:delta(delta(revenue,productPlannedTotal),plannedObjective),actualObjectiveVariance:delta(delta(actualRevenue,comparableCost),invoicedObjective),

@@ -16,6 +16,7 @@ import { rdpCreateSchema, proposeRdpCreation, validateRdpSnapshot, executeRdpCre
 import { hasEmergencyPermission, assertEmergencyPermission, assertAnomaly, anomalyProperties, reopenSchema, previewReopen, previewForcedStart, verifyForcedClosure, reopenCall, PRODUCTION_EMERGENCY_PERMISSIONS } from './production-emergency.js';
 
 import {ddtPrintSettingsSchema, previewDdtPrintSettings, applyDdtPrintSettings} from './ddt-print-settings.js';
+import {objectiveRevisionSchema,prepareObjectiveRevision,applyObjectiveRevision} from '../production-objective-revisions.js';
 
 const text = { type: "string", maxLength: 500 };
 const identifier = { type: "string", minLength: 1, maxLength: 160 };
@@ -68,6 +69,7 @@ const externalEntitySchema = (entityLabel) => ({
 });
 
 export const CONTROLLED_AI_ACTIONS = Object.freeze({
+  PRODUCTION_OBJECTIVE_RECALCULATE:{system:'mes',risk:'write',permission:'progremes.write',schema:objectiveRevisionSchema,description:'Ricalcola solo il margine obiettivo per turno dei documenti storici con formula congelata, in nuove versioni con backup e rollback. Prima leggere PRODUCTION_OBJECTIVE_PREVIEW; conferma umana Workspace obbligatoria.'},
   MES_PRODUCTION_REOPEN: { system: 'mes', risk: 'destructive', permission: 'progremes.production.reopen', schema: reopenSchema,
     description: 'Riapre una lavorazione conclusa solo dopo anteprima MES, permesso specifico, anomalia e conferma Workspace. Blocca documenti contabilizzati e dipendenze; non annulla SL/CL.' },
   MES_PRODUCTION_FORCE_START: { system: 'mes', risk: 'destructive', permission: 'progremes.production.force_start', schema: {
@@ -210,6 +212,7 @@ export async function proposeControlledAction(auth, tool, input, { correlationId
   }
   if (tool === 'MES_PRODUCTION_START') input = { ...input, evidence: await productionStartPreview(auth, input) };
   if (tool === 'DDT_PRINT_SETTINGS_UPDATE') input = await previewDdtPrintSettings(auth,input);
+  if (tool === 'PRODUCTION_OBJECTIVE_RECALCULATE') input = await prepareObjectiveRevision(auth,input);
   if (tool === 'DDT_ARCHIVED_PDF_REFRESH') input = await previewArchivedDdtRefresh(auth,input);
   if (tool === 'RDP_CREATE') input = await proposeRdpCreation(auth, input);
   if (['ARTICLE_UPDATE', 'ARTICLE_BULK_UPDATE'].includes(tool)) input = await productChangePreview(auth, tool, input);
@@ -279,6 +282,7 @@ function requiredEnvironment(name) {
 }
 
 async function executeExternalAction(auth, pending) {
+  if(pending.tool==='PRODUCTION_OBJECTIVE_RECALCULATE')return applyObjectiveRevision(auth,pending);
   if (pending.tool === 'DDT_ARCHIVED_PDF_REFRESH') return applyArchivedDdtRefresh(auth,pending);
   if (pending.tool === 'DDT_PRINT_SETTINGS_UPDATE') return applyDdtPrintSettings(auth,pending);
   if (['MES_PRODUCTION_START', 'MES_PRODUCTION_FORCE_START'].includes(pending.tool)) return executeProductionStart(auth, pending);

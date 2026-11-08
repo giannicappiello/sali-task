@@ -34,5 +34,5 @@ export function after17Intervals(entries) {
  });
 }
 export function latestCostAdjustment(audit) {
- return {washes:audit.find(a=>a.details?.washes)?.details.washes||[],overtime:audit.find(a=>a.details?.overtime)?.details.overtime||[]};
+ return {washes:audit.find(a=>a.details?.washes)?.details.washes||[],overtime:audit.find(a=>a.details?.overtime)?.details.overtime||[],objectiveRevision:audit.find(a=>Object.hasOwn(a.details||{},'objectiveRevision'))?.details.objectiveRevision??null};
 }

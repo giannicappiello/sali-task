@@ -28,6 +28,7 @@ import { dataCoverageTool } from './data-coverage.js';
 import { mexalFinanceTools } from './mexal-finance.js';
 import { sourceMemoryTools } from './source-memory.js';
 import { mexalArchiveTools } from './mexal-archive.js';
+import {readObjectivePreview} from '../production-objective-revisions.js';
 
 const read = (description, schema, execute) => ({ description, inputSchema: schema, execute, effect: 'read' });
 const querySchema = objectSchema({ query: { type: 'string', minLength: 1, maxLength: 160 } }, ['query']);
@@ -99,6 +100,7 @@ export function createBrainCatalog(auth) {
     tools.MES_PRIORITY_SIMULATE = { ...read('Simula priorita e riallocazioni; nessuna applicazione.', priorityRequestSchema, input => simulatePriority(auth, input)), effect: 'preview' };
   }
   if (controlled.MES_MATERIAL_REALLOCATE) tools.MES_MATERIAL_ALLOCATION_PREVIEW = read('Legge anteprima materiali prima di una proposta.', materialLookupSchema, input => previewMaterialReallocation(auth, input));
+  if(controlled.PRODUCTION_OBJECTIVE_RECALCULATE)tools.PRODUCTION_OBJECTIVE_PREVIEW=read('Anteprima non persistita del ricalcolo obiettivo STATION per turno: documenti eleggibili/esclusi, differenze, backup, versioni e rollback. Nessuna modifica di prezzi, durate o snapshot.',objectSchema({rollbackOf:uuidSchema}),input=>readObjectivePreview(auth,input));
   for (const [name, descriptor] of Object.entries(controlled)) tools[name] = {
     description: `${descriptor.description || name}. Prepara SOLO una proposta. Richiede conferma umana separata nel browser; non esegue il comando diretto.`,
     inputSchema: descriptor.schema, effect: 'propose',

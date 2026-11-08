@@ -13,14 +13,22 @@ test('finance discovers only advertised financial GETs and rejects arbitrary, en
  for(const path of ['/utenti','/scadenzario?x=1','//evil.test','/../scadenzario','/%2e%2e/scadenzario','/scadenzario#x','https://evil.test'])assert.throws(()=>checkedFinancePath(path,cap));
 });
 test('admin and global scope are verified before any Mexal connection, including revocation/errors',async()=>{
- assert.deepEqual(mexalFinanceTools({...admin,capabilities:{internal_data:true,allowed_modules:['prodotti']}}),{});
- assert.deepEqual(mexalArchiveTools({...admin,capabilities:{internal_data:true,allowed_modules:[]}}),{});
+ assert.deepEqual(mexalFinanceTools({...admin,capabilities:{internal_data:false}}),{});
+ assert.deepEqual(mexalArchiveTools({...admin,capabilities:{internal_data:false}}),{});
  for(const scenario of ['user','revoked','scope','offline']) {
   const a={...admin,profile:scenario==='user'?{ruoli:{}}:admin.profile,scoped:{rpc:async name=>scenario==='offline'?{error:Error('unavailable')}:{data:name==='workspace_user_is_admin'?scenario!=='revoked':{mode:'team'}}}};
   if(scenario==='user'){assert.deepEqual(mexalFinanceTools(a),{});continue;}
   const tools=mexalFinanceTools(a,{clientForYear:()=>{assert.fail('must not connect');}});
   await assert.rejects(tools.MEXAL_FINANCE_CATALOG.execute({}));
  }
+});
+test('admin finance uses the existing admin entitlement, not an impossible integration AI module',async()=>{
+ // Actual workspace_ai_capabilities SQL never includes integrazioni, even
+ // for admins. Missing it is not a denied admin operation.
+ const actual={...admin,capabilities:{internal_data:true,allowed_modules:['prodotti','ordini_pr','progremes']}};
+ const t=mexalFinanceTools(actual,{clientForYear:()=>({getJson:async()=>help})});
+ assert(t.MEXAL_FINANCE_CATALOG);assert(mexalArchiveTools(actual).MEXAL_ARCHIVE_READ);
+ const result=await t.MEXAL_FINANCE_CATALOG.execute({});assert.equal(result.capabilities.length,2);
 });
 test('finance reuses the connection, rechecks live contract, paginates, and preserves official values',async()=>{
  const calls=[],payload={items:[{amount:'123.4567',currency:'EUR',date:'2026-11-08'}],next:'opaque+cursor'};

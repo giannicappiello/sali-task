@@ -41,7 +41,7 @@ function requireHttpAuthorization(array $config): void
         return;
     }
     $readCapabilities = $_SERVER['REQUEST_METHOD'] === 'GET'
-        && ($_GET['action'] ?? '') === 'report_capabilities';
+        && in_array(($_GET['action'] ?? ''), ['report_capabilities', 'activity_email_capabilities'], true);
     if ($_SERVER['REQUEST_METHOD'] !== 'POST' && !$readCapabilities) {
         respond(['error' => 'Metodo non consentito.'], 405);
     }
@@ -173,9 +173,41 @@ function runTest(array $config): array
     return ['status' => 'test_sent', 'message_id' => $mail['message_id']];
 }
 
-function processOne(array $config, bool $reportsOnly = false): array
+function processActivityClaim(array $config, array $claimed): array
 {
-    $claimed = apiRequest($config, ['action' => 'claim', 'shipment_protocol' => 1, 'report_protocol' => 1, 'reports_only' => $reportsOnly]);
+    $email = $claimed['email'];
+    $attempted = false;
+    $accepted = false;
+    $definitive = false;
+    $identity = ['activity_email_protocol' => 1, 'email_id' => $email['id'],
+        'worker_id' => $claimed['worker_id'], 'lock_token' => $email['lock_token']];
+    try {
+        if (($claimed['activity_email_protocol'] ?? null) !== 1 || !empty($claimed['attachments'])) {
+            throw new RuntimeException('Invalid activity payload.');
+        }
+        $mail = buildMail($config, (string)$email['destinatario'], (string)$email['oggetto'], (string)$email['corpo'], []);
+        $attempted = true;
+        if (!sendMessage($mail)) {
+            $definitive = true;
+            throw new RuntimeException('Provider rejected message.');
+        }
+        $accepted = true;
+        apiRequest($config, array_merge($identity, ['action' => 'accepted', 'message_id' => $mail['message_id']]));
+        return ['status' => 'accepted', 'email_id' => $email['id'], 'attachments' => 0];
+    } catch (Throwable $error) {
+        $status = (!$attempted || ($definitive && !$accepted)) ? 'failed' : 'uncertain';
+        try {
+            apiRequest($config, array_merge($identity, ['action' => $status]));
+        } catch (Throwable $ignored) {
+            // Sending expires to uncertain. Never retry the provider handoff.
+        }
+        return ['status' => $status, 'email_id' => $email['id']];
+    }
+}
+
+function processOne(array $config, bool $reportsOnly = false, bool $activityOnly = false): array
+{
+    $claimed = apiRequest($config, ['action' => 'claim', 'shipment_protocol' => 1, 'report_protocol' => 1, 'reports_only' => $reportsOnly, 'activity_email_protocol' => 1, 'activity_only' => $activityOnly]);
     if (($claimed['status'] ?? '') === 'idle') {
         return ['status' => 'idle'];
     }
@@ -183,6 +215,12 @@ function processOne(array $config, bool $reportsOnly = false): array
         throw new RuntimeException('Risposta claim non valida.');
     }
     $email = $claimed['email'];
+    if ($activityOnly && !str_starts_with((string)$email['id'], 'activity:')) {
+        throw new RuntimeException('Worker activity protocol mismatch.');
+    }
+    if (str_starts_with((string)$email['id'], 'activity:')) {
+        return processActivityClaim($config, $claimed);
+    }
     $shipment = str_starts_with((string)$email['id'], 'ddt:');
     $report = str_starts_with((string)$email['id'], 'report:');
     $definitive = false;
@@ -254,6 +292,11 @@ try {
         ? (($argv[1] ?? '') === '--test' ? 'test' : 'run')
         : strtolower(trim((string)($_GET['action'] ?? $input['action'] ?? 'run')));
 
+    if ($action === 'activity_email_capabilities') {
+        respond(['activity_email_protocol' => 1,
+            'queue_enabled' => ($config['queue_enabled'] ?? false) === true]);
+    }
+
     if ($action === 'report_capabilities') {
         respond(['report_protocol' => 1,
             'queue_enabled' => ($config['queue_enabled'] ?? false) === true,
@@ -274,7 +317,7 @@ try {
     $limit = $reportsOnly ? 40 : max(1, min(25, (int)($config['max_jobs_per_run'] ?? 10)));
     $results = [];
     for ($index = 0; $index < $limit; $index++) {
-        $result = processOne($config, $reportsOnly);
+        $result = processOne($config, $reportsOnly, $action === 'run_activity');
         $results[] = $result;
         if ($result['status'] === 'idle') {
             break;

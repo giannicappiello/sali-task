@@ -1,3 +1,6 @@
+import { chatEmailTools } from './chat-email-tools.js';
+import { getChatEmail, getChatEmailDelegation } from '../email/chat-email-service.js';
+import { getActivityEmail } from '../email/activity-email-service.js';
 import {readArchivedDdtPdfs} from '../ai/ddt-archive-refresh.js';
 import { randomUUID } from 'node:crypto';
 import { workspaceReadTools } from '../ai/workspace-search.js';
@@ -28,6 +31,7 @@ import { dataCoverageTool } from './data-coverage.js';
 import { mexalFinanceTools } from './mexal-finance.js';
 import { sourceMemoryTools } from './source-memory.js';
 import { mexalArchiveTools } from './mexal-archive.js';
+import {mexalBankBalanceTools} from './mexal-bank-balances.js';
 import { mexalCashflowTools } from './mexal-cashflow.js';
 import {readObjectivePreview} from '../production-objective-revisions.js';
 
@@ -44,8 +48,8 @@ const datasets = {
 
 export function createBrainCatalog(auth) {
   const controlled = availableControlledActions(auth);
-  const tools = { ...workspaceReadTools(auth), ...operationalReadTools(auth), ...workspaceCostReadTools(auth), ...mexalFinanceTools(auth), ...mexalArchiveTools(auth), ...mexalCashflowTools(auth),
-    ...productionEmergencyTools(auth), ...commercialReportTools(auth),
+  const tools = { ...workspaceReadTools(auth), ...operationalReadTools(auth), ...workspaceCostReadTools(auth), ...mexalFinanceTools(auth), ...mexalArchiveTools(auth), ...mexalCashflowTools(auth), ...mexalBankBalanceTools(auth),
+    ...productionEmergencyTools(auth), ...commercialReportTools(auth), ...chatEmailTools(auth),
     ...recoveryTools(auth, Boolean(controlled.MES_PLAN_APPLY)), ...memoryTools(auth), ...activityTools(auth), ...businessReadTools(auth), ...commerceReadTools(auth),
     ...rdpCreationTools(auth, Boolean(controlled.RDP_CREATE)),
     ...(controlled.FORMULA_CREATE_REVISION ? formulaReadTools(auth) : {}),
@@ -54,7 +58,14 @@ export function createBrainCatalog(auth) {
     ...(controlled.MES_PRODUCTION_DATES_CORRECT ? productionDateTools(auth) : {}),
     ...(controlled.MES_PRODUCTION_START ? productionStartTools(auth) : {}),
   };
-  tools.BRAIN_ACTION_STATUS = read('Legge una propria proposta o azione persistita; nessuna riesecuzione.', objectSchema({ id: uuidSchema, kind: { type:'string',enum:['brain','controlled','heading'] } }, ['id','kind']), async ({id,kind}) => {
+  tools.BRAIN_ACTION_STATUS = read('Legge una propria proposta o azione persistita; nessuna riesecuzione.', objectSchema({ id: uuidSchema, kind: { type:'string',enum:['brain','controlled','heading','email','email-delegation'] } }, ['id','kind']), async ({id,kind}) => {
+    if (kind === 'email-delegation') return { action: await getChatEmailDelegation(auth, id), readAt: new Date().toISOString() };
+    if (kind === 'email') {
+      try { return { action: await getChatEmail(auth, id), readAt: new Date().toISOString() }; }
+      catch (error) { if (error.status !== 404) throw error; }
+      if (!canReadModule(auth, ['attivita'])) throw Object.assign(new Error('Email attività non autorizzate nel perimetro AI.'), { status: 403 });
+      return { action: await getActivityEmail(auth, id), readAt: new Date().toISOString() };
+    }
     const {data,error}=await auth.scoped.from(kind==='brain'?'second_brain_proposals':'ai_action_audit').select('*').eq('id',id).eq('user_id',auth.profile.id).maybeSingle();
     if(error)throw error;
     if(!data)throw Object.assign(new Error('Azione non accessibile.'),{status:404});

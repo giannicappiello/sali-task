@@ -58,7 +58,7 @@ test('connector bounds responses when Mexal ignores max, preserving every offici
  assert.equal(a.snapshot,b.snapshot);
 });
 test('financial discovery includes accounts and routes described as accounting data',()=>{
- assert.equal(financeCatalog([{method:'GET',regexp:'^/conti/{0,1}$'},{method:'GET',regexp:'^/pdc/{0,1}$',descrizione:'piano dei conti'}]).length,2);
+ assert.equal(financeCatalog([{method:'GET',regexp:'^/conti/{0,1}$'},{method:'GET',regexp:'^/pdc/{0,1}$',descrizione:'piano dei conti'},{method:'GET',regexp:'^/centri-di-costo/{0,1}$'},{method:'GET',regexp:'^/cdg/{0,1}$',descrizione:'elenco centri di ricavo'}]).length,4);
 });
 test('complete archive reads retain personal RLS and fixed fields without recalculating amounts',async()=>{
  const calls=[];const q={then(resolve){return Promise.resolve({data:[{id:'a',totale_imponibile:'12.3456'},{id:'b'},{id:'c'}]}).then(resolve);}};

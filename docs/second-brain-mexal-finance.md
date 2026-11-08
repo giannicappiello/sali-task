@@ -30,6 +30,7 @@ La memoria non è un backup completo del gestionale: il flusso acquisisce ogni p
 - **Magazzino**: conservare data, magazzino, unità, criterio di valorizzazione e fonte. Lo storico Workspace contiene anche copie `mexal_reconstructed` e costi ultimi; non presentarli come valorizzazione ufficiale di bilancio o LIFO/FIFO/medio.
 - **Scarichi SL**: leggere il movimento/documento originale disponibile, con riferimento, anno, articoli e importi. Non sostituire i valori storici con prezzi correnti senza una qualificazione esplicita.
 - **Bilancio**: saldi e dettagli conti, stato patrimoniale e conto economico devono provenire dal contratto o dall'export ufficiale pubblicato dall'installazione. Un catalogo privo di queste risorse non prova saldo zero: segnala un gap di integrazione. La memoria di tali report non ne cambia natura o stato di approvazione.
+- **Piano dei conti e centri di costo/ricavo**: codici e descrizioni originali, con riferimenti nelle registrazioni. Nessuna rinumerazione, classificazione inventata o associazione automatica basata sui nomi. La pubblicazione nel catalogo di Second Brain rimane soggetta al contratto Mexal e ai controlli admin; non è pubblicazione anonima sul web.
 
 ## Evidenze e limiti della verifica
 

@@ -6,7 +6,7 @@ import { requireAnalyticsScope } from './production-report-reads.js';
 
 const fail=(message,status=400)=>Object.assign(Error(message),{status});
 const digest=value=>createHash('sha256').update(value).digest('hex');
-const financial=/scadenz|contabil|bilanc|prim[ao][-_ ]?nota|conti|sald[io]|tesorer|banc[ah]|cass[ae]|fluss|cash|margini|costi|valorizz|magazzin|articol|movimenti/i;
+const financial=/scadenz|contabil|bilanc|prim[ao][-_ ]?nota|conti|centr[io].*(?:cost|ricav)|sald[io]|tesorer|banc[ah]|cass[ae]|fluss|cash|margini|costi|valorizz|magazzin|articol|movimenti/i;
 const technical=/password|passwd|token|secret|credential|utenti|oauth|autentic|configuraz/i;
 export function financeCatalog(help) {
  const rows=new Map();
@@ -65,7 +65,7 @@ export function mexalFinanceTools(auth,{clientForYear=year=>buildMexalClient({ye
   MEXAL_FINANCE_CATALOG:{effect:'read',inputSchema:objectSchema(properties),description:'Verifica l’amministratore e legge il catalogo GET ufficiale della connessione API Mexal esistente: scadenziari, contabilità/bilancio, saldi, magazzino, articoli e movimenti quando pubblicati. Nessuna nuova credenziale, sincronizzazione o scrittura. La presenza nel catalogo non prova la riuscita della lettura.',execute:async input=>{
    const {client,capabilities}=await current(input.year);
    return {source:'Mexal /help',readOnly:true,readAt:new Date().toISOString(),company:client.azienda,year:client.anno,capabilities,
-    requirements:['scadenziari clienti e fornitori','flussi di cassa effettivi e previsionali distinti','margini e costi ufficiali','valorizzazione magazzino con criterio e data','valore scarichi SL documentali','bilancio e dettaglio conti/saldi'],
+    requirements:['scadenziari clienti e fornitori','flussi di cassa effettivi e previsionali distinti','margini e costi ufficiali','valorizzazione magazzino con criterio e data','valore scarichi SL documentali','bilancio e dettaglio conti/saldi','codici e descrizioni del piano dei conti e dei centri di costo/ricavo, con riferimenti originali nelle registrazioni'],
     coverage:'Sono esposte solo risorse GET pubblicate dall’installazione. Se bilancio o valorizzazioni non sono presenti, il dato non è disponibile da questo contratto: non ricostruirlo dalle fatture o dal costo ultimo. Nessuna chiamata di servizi POST, registrazione contabile o esecuzione programmi.'};
   }},
   MEXAL_FINANCE_READ:{effect:'read',inputSchema:objectSchema({...properties,capabilityId:{type:'string',pattern:'^[a-f0-9]{64}$'},path:{type:'string',minLength:1,maxLength:500},max:{type:'integer',minimum:1,maximum:100},offset:{type:'integer',minimum:0,maximum:1000000},snapshot:{type:'string',pattern:'^[a-f0-9]{64}$'},next:{type:'string',maxLength:4000},fields:{type:'string',maxLength:1500,pattern:'^[A-Za-z0-9_,]+$'},tipo:{type:'string',enum:['P','D','X']}},['capabilityId','path']),description:'Legge una risorsa economico-finanziaria con GET dalla connessione Mexal esistente, dopo verifica live del catalogo e dell’amministratore. Usare ID/percorso da MEXAL_FINANCE_CATALOG; scadenziario tipo P/D/X se previsto. Risposte limitate a max righe (default 50): prima seguire pagination.nextOffset con snapshot, poi upstreamNext. Conserva importi ufficiali senza ricalcolare bilancio, margini, cassa o valorizzazioni. Non scrive e non importa.',execute:async input=>{

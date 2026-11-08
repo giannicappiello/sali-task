@@ -5,7 +5,7 @@ import { hasCredentials } from './credential-guard.js';
 import { redactHistory } from '../../integrations/second-brain-progre/src/history.mjs';
 
 const supported=new Set(['WORKSPACE_SEARCH','BUSINESS_SEARCH','CRM_WORKSPACE_COSTS_READ','PRODUCTION_CONSUNTIVI_READ','CRM_CUSTOMER_SEARCH','SALES_INVOICES_READ','CUSTOMER_REORDERS_READ','WORKSPACE_ORDERS_SEARCH','MES_READ','HR_READ','COMPANY_CALENDAR_READ','MEXAL_FINANCE_READ','MEXAL_ARCHIVE_READ']);
-const volatile=new Set(['readAt','generatedAt','asOfLocal']);
+const volatile=new Set(['readAt','generatedAt','asOfLocal','data_ric_elab']);
 const fail=(message,status=400)=>Object.assign(Error(message),{status});
 const hash=value=>createHash('sha256').update(value).digest('hex');
 function stable(value) {

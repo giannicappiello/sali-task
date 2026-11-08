@@ -25,6 +25,9 @@ import { commerceReadTools } from './commerce-reads.js';
 import { commercialReportTools } from './commercial-report-tools.js';
 import { workspaceCostReadTools } from './workspace-cost-reads.js';
 import { dataCoverageTool } from './data-coverage.js';
+import { mexalFinanceTools } from './mexal-finance.js';
+import { sourceMemoryTools } from './source-memory.js';
+import { mexalArchiveTools } from './mexal-archive.js';
 
 const read = (description, schema, execute) => ({ description, inputSchema: schema, execute, effect: 'read' });
 const querySchema = objectSchema({ query: { type: 'string', minLength: 1, maxLength: 160 } }, ['query']);
@@ -39,7 +42,7 @@ const datasets = {
 
 export function createBrainCatalog(auth) {
   const controlled = availableControlledActions(auth);
-  const tools = { ...workspaceReadTools(auth), ...operationalReadTools(auth), ...workspaceCostReadTools(auth),
+  const tools = { ...workspaceReadTools(auth), ...operationalReadTools(auth), ...workspaceCostReadTools(auth), ...mexalFinanceTools(auth), ...mexalArchiveTools(auth),
     ...productionEmergencyTools(auth), ...commercialReportTools(auth),
     ...recoveryTools(auth, Boolean(controlled.MES_PLAN_APPLY)), ...memoryTools(auth), ...activityTools(auth), ...businessReadTools(auth), ...commerceReadTools(auth),
     ...rdpCreationTools(auth, Boolean(controlled.RDP_CREATE)),
@@ -106,6 +109,7 @@ export function createBrainCatalog(auth) {
     if (name === 'MES_DOCUMENT_GENERATE' && !controlled.MES_PLAN_APPLY) continue;
     tools[name] = { description: `Intestazioni/documenti: ${name}. Le modifiche creano solo proposte da confermare.`, inputSchema: HEADING_TOOL_SCHEMAS[name], effect: descriptor.risk === 'write' ? 'propose' : 'read', execute: input => executeHeadingModelTool(auth, name, input) };
   }
+  Object.assign(tools,sourceMemoryTools(auth,tools));
   tools.BRAIN_DATA_COVERAGE = dataCoverageTool(tools);
   // This boundary deliberately excludes chat(), generateText(), development-agent,
   // order-document AI extraction and every model-backed legacy delegate.

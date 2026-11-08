@@ -20,3 +20,21 @@ test('source review is read only until human submit and rejects cross-origin wri
   const rejected=await fetch(ui.url,{method:'POST',headers:{origin:new URL(ui.url).origin,'Content-Type':'application/x-www-form-urlencoded'},body:'decision=reject',redirect:'manual'});assert.equal(rejected.status,303);assert.equal(ui.getStatus().status,'rejected');assert.equal(calls.length,2);
  }finally{ui.close();await rm(dir,{recursive:true,force:true});}
 });
+
+for(const changedOwner of [false,true])test(`long imports renew only the exact reviewed commitment, identity changed=${changedOwner}`,async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'progre-renew-test-')),path=join(dir,'archive.json');
+ const entries=[{title:'Test',content:'Dato originale',scope:'personal',kind:'historical',source:'second-brain:MEXAL_FINANCE_READ',sourceKey:'source:test'}];
+ await writeFile(path,JSON.stringify({format:'second-brain-source-import-v1',ownerId:owner,entries,summary:{company:'GRE',year:2026}}));
+ const calls=[];let confirmations=0;const now=Date.now;let simulated=now();Date.now=()=>simulated;
+ const client={request:async body=>{calls.push(body);if(body.action==='catalog')return {identity:{id:owner}};if(body.action==='source_import_confirmation'){confirmations++;return {identity:{id:changedOwner&&confirmations>1?'other':owner,name:'Test'},receipt:'test-only-'+confirmations};}if(body.action==='source_import_batch')return {imported:body.entries.length};throw Error('Unexpected request');}};
+ let ui;
+ try{
+  ui=await startSourceImportReview(client,path,10000);simulated+=3000001;
+  // This is an isolated UI unit test with a fake client, never a real approval.
+  await fetch(ui.url,{method:'POST',headers:{origin:new URL(ui.url).origin,'Content-Type':'application/x-www-form-urlencoded'},body:'decision=confirm',redirect:'manual'});
+  await new Promise(resolve=>setImmediate(resolve));
+  const manifests=calls.filter(x=>x.action==='source_import_confirmation').map(x=>x.manifest);assert.equal(manifests.length,2);assert.deepEqual(manifests[0],manifests[1]);
+  assert.equal(ui.getStatus().imported,changedOwner?0:1);assert.equal(ui.getStatus().status,changedOwner?'uncertain':'completed');
+  assert.equal(calls.filter(x=>x.action==='source_import_batch').length,changedOwner?0:1);
+ }finally{Date.now=now;ui?.close();await rm(dir,{recursive:true,force:true});}
+});

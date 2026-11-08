@@ -1,0 +1,97 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+let PGlite;
+try { ({PGlite} = await import('../../.tmp/activity-email-fixture/node_modules/@electric-sql/pglite/dist/index.js')); } catch { /* Optional isolated integration-test engine. */ }
+const A='11111111-1111-4111-8111-111111111111', B='22222222-2222-4222-8222-222222222222', T='33333333-3333-4333-8333-333333333333', X='44444444-4444-4444-8444-444444444444';
+const bootstrap=`
+create role anon; create role authenticated; create role service_role bypassrls;
+create schema auth;
+create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('test.user',true),'')::uuid$$;
+grant usage on schema public,auth to authenticated,service_role;
+create table public.ruoli(id uuid primary key,amministratore_workspace boolean);
+create table public.utenti(id uuid primary key,auth_user_id uuid,ruolo_id uuid references public.ruoli,attivo boolean);
+create table public.permessi(id uuid primary key default gen_random_uuid(),codice text unique,descrizione text,modulo text);
+create table public.permessi_utente(utente_id uuid,permesso_id uuid);
+create table public.permessi_ruolo(ruolo_id uuid,permesso_id uuid);
+create table public.workspace_eccezioni_utente(utente_id uuid,ambito text,codice text,decisione text,valida_fino_a timestamptz);
+create table public.v4_fasi_progetto(id uuid primary key,titolo text,owner_id uuid,updated_at timestamptz default now());
+alter table public.v4_fasi_progetto enable row level security;
+create policy task_read on public.v4_fasi_progetto for select to authenticated using(owner_id=auth.uid());
+create policy task_write on public.v4_fasi_progetto for update to authenticated using(owner_id=auth.uid());
+grant select,update on public.v4_fasi_progetto to authenticated;
+grant select on public.v4_fasi_progetto to service_role;
+create function public.workspace_current_profile_id() returns uuid language sql stable as $$select auth.uid()$$;
+create function public.workspace_user_is_admin() returns boolean language sql stable as $$select false$$;
+create function public.workspace_customer_record_scope() returns boolean language sql stable as $$select false$$;
+create function public.workspace_access_context() returns jsonb language sql stable as $$select '{"module_levels":{"attivita":"scrittura"}}'::jsonb$$;
+create function public.workspace_direct_phase_ids() returns uuid[] language sql stable as $$select coalesce(array_agg(id),'{}'::uuid[]) from public.v4_fasi_progetto where owner_id=auth.uid()$$;
+create function public.workspace_ai_capabilities() returns jsonb language sql stable as $$select '{"allowed_modules":["attivita"]}'::jsonb$$;
+create function public.second_brain_enabled() returns boolean language sql stable as $$select true$$;
+create function public.workspace_ai_can_propose() returns boolean language sql stable as $$select true$$;
+create function public.workspace_ai_can_confirm() returns boolean language sql stable as $$select coalesce(current_setting('test.ai_confirm',true),'false')='true'$$;
+insert into public.ruoli values('${A}',false);
+insert into public.utenti values('${A}','${A}','${A}',true),('${B}','${B}','${A}',true);
+insert into public.v4_fasi_progetto(id,titolo,owner_id) values('${T}','Task A','${A}'),('${X}','Task B','${B}');
+`;
+test('Postgres fixture: actual RLS, immutable drafts, AI gates, atomic claims, no retry', {skip: !PGlite},async()=>{
+ const db=new PGlite();
+ try {
+ await db.exec(bootstrap);
+ await db.exec(await readFile(new URL('../../supabase/migrations/20261108112613_activity_email.sql',import.meta.url),'utf8'));
+ await db.exec(`insert into public.permessi_utente select '${A}',id from public.permessi; insert into public.permessi_utente select '${B}',id from public.permessi;`);
+ async function as(role,user,sql,params=[]){
+  await db.exec(`set role ${role}; select set_config('test.user','${user}',false);`);
+  try{return await db.query(sql,params);}finally{await db.exec('reset role');}
+ }
+ const propose=(key,ai=false)=>as('authenticated',A,`select (public.workspace_propose_activity_email($1,'recipient@example.test','Subject','Body',$2,$3)).*`,[T,key,ai]);
+ const decide=(id,hash)=>as('authenticated',A,`select (public.workspace_decide_activity_email($1,true,$2)).*`,[id,hash]);
+ await assert.rejects(as('authenticated',A,`select public.workspace_activity_email_context($1)`,[X]),/NOT_ACCESSIBLE/);
+ await assert.rejects(as('authenticated',A,`select * from public.workspace_email_delivery`),/permission denied/);
+ const draft=(await propose('key_first')).rows[0];
+ assert.equal(draft.status,'proposed');assert.match(draft.payload_hash,/^[a-f0-9]{64}$/);
+ assert.equal((await propose('key_first')).rows[0].id,draft.id);
+ await assert.rejects(as('authenticated',A,`select public.workspace_propose_activity_email($1,'changed@example.test','Subject','Body','key_first',false)`,[T]),/IDEMPOTENCY_CONFLICT/);
+ assert.equal((await as('authenticated',B,'select * from public.workspace_emails')).rows.length,0);
+ await assert.rejects(as('authenticated',B,'select public.workspace_decide_activity_email($1,true,$2)',[draft.id,draft.payload_hash]),/NOT_ACCESSIBLE/);
+ await assert.rejects(as('authenticated',A,"update public.workspace_emails set body='changed' where id=$1",[draft.id]),/permission denied/);
+ await assert.rejects(decide(draft.id,'a'.repeat(64)),/EMAIL_CHANGED/);
+ await db.exec(`delete from public.permessi_utente where utente_id='${A}'`);
+ await assert.rejects(decide(draft.id,draft.payload_hash),/PERMISSION|NOT_ACCESSIBLE/);
+ await db.exec(`insert into public.permessi_utente select '${A}',id from public.permessi`);
+ const ai=(await propose('key_ai_123',true)).rows[0];
+ await assert.rejects(decide(ai.id,ai.payload_hash),/AI_EMAIL_PERMISSION_REQUIRED/);
+ await assert.rejects(as('authenticated',A,"update public.workspace_emails set status='queued' where id=$1",[ai.id]),/AI_EMAIL_PERMISSION_REQUIRED/);
+ for(const status of ['sending','accepted']) await assert.rejects(as('authenticated',A,'update public.workspace_emails set status=$1 where id=$2',[status,draft.id]),/INVALID_EMAIL_TRANSITION/);
+ await db.exec(`insert into public.workspace_eccezioni_utente values('${A}','permesso','activity.email.send','nega',null)`);
+ await assert.rejects(decide(draft.id,draft.payload_hash),/PERMISSION/);
+ await db.exec('delete from public.workspace_eccezioni_utente');
+ await db.exec(`update public.v4_fasi_progetto set owner_id='${B}' where id='${T}'`);
+ assert.equal((await as('authenticated',A,'select * from public.workspace_emails')).rows.length,0);
+ await assert.rejects(decide(draft.id,draft.payload_hash),/NOT_ACCESSIBLE/);
+ await db.exec(`update public.v4_fasi_progetto set owner_id='${A}' where id='${T}'`);
+ await db.exec("select set_config('test.ai_confirm','true',false)");
+ assert.equal((await decide(draft.id,draft.payload_hash)).rows[0].status,'queued');
+ assert.equal((await decide(draft.id,draft.payload_hash)).rows[0].status,'queued');
+ await assert.rejects(as('authenticated',A,"select * from public.workspace_claim_email('bad')"),/permission denied/);
+ const claim=(await as('service_role',A,"select * from public.workspace_claim_email('fixture')")).rows[0].workspace_claim_email;
+ assert.equal(claim.status,'sending');assert.ok(claim.lock_token);
+ assert.equal((await as('service_role',A,"select * from public.workspace_claim_email('fixture')")).rows.length,0);
+ assert.equal((await as('service_role',A,'select public.workspace_finish_email($1,$2,\'accepted\',\'provider-1\',null)',[claim.id,B])).rows[0].workspace_finish_email,false);
+ assert.equal((await as('service_role',A,'select public.workspace_finish_email($1,$2,\'accepted\',\'provider-1\',null)',[claim.id,claim.lock_token])).rows[0].workspace_finish_email,true);
+ assert.equal((await as('service_role',A,'select public.workspace_finish_email($1,$2,\'failed\',null,\'FAIL\')',[claim.id,claim.lock_token])).rows[0].workspace_finish_email,false);
+ assert.equal((await decide(draft.id,draft.payload_hash)).rows[0].status,'accepted');
+ const timeout=(await propose('key_timeout')).rows[0];
+ await decide(timeout.id,timeout.payload_hash);
+ const timeoutClaim=(await as('service_role',A,"select * from public.workspace_claim_email('fixture')")).rows[0].workspace_claim_email;
+ await db.exec("alter table public.workspace_emails disable trigger workspace_guard_activity_email");
+ await db.query("update public.workspace_emails set claimed_at=now()-interval '11 minutes' where id=$1",[timeout.id]);
+ await db.exec("alter table public.workspace_emails enable trigger workspace_guard_activity_email");
+ assert.equal((await as('service_role',A,'select public.workspace_expire_email_claims()')).rows[0].workspace_expire_email_claims,1);
+ assert.equal((await as('authenticated',A,'select status from public.workspace_emails where id=$1',[timeout.id])).rows[0].status,'uncertain');
+ assert.equal((await as('service_role',A,'select public.workspace_finish_email($1,$2,\'accepted\',null,null)',[timeout.id,timeoutClaim.lock_token])).rows[0].workspace_finish_email,false);
+ assert.equal((await as('service_role',A,"select * from public.workspace_claim_email('fixture')")).rows.length,0);
+ await db.exec(`update public.v4_fasi_progetto set titolo='Changed' where id='${T}'`);
+ await assert.rejects(decide(ai.id,ai.payload_hash),/TASK_CHANGED/);
+ } finally {await db.close();}
+});

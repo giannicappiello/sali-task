@@ -2,6 +2,10 @@ import productionActions from "../../server/production-actions-handler.js";
 import { handleInventorySnapshot } from "../../server/progremes-inventory.js";
 
 export default async function handler(req, res) {
+  if (req.query?.route === 'activity-email') {
+    const { handleActivityEmail } = await import('../../server/email/activity-email-handler.js');
+    return handleActivityEmail(req, res);
+  }
   if(req.query?.route==='commercial-reports') {
     const {handleCommercialReports}=await import('../../server/reports/commercial-handler.js');
     return handleCommercialReports(req,res);

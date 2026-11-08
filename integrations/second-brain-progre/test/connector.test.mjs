@@ -54,3 +54,17 @@ test('MCP initialize and tools/list work without a saved login; stdout contains 
   assert.equal(rows[0].result.serverInfo.name,'second-brain-progre');
   assert(rows[1].result.tools.some(t=>t.name==='BRAIN_LOGIN'));
 });
+
+
+test('email and delegation review use complete Workspace page, never generic local confirmation',async()=>{
+  let calls=0,interactions=0;
+  const bridge=createBridge({request:async()=>{calls++;}},async()=>{interactions++;throw Error('unsafe local review');});
+  for(const kind of ['email','email-delegation']) {
+    const value=await bridge.call('BRAIN_REVIEW',{kind,id:'11111111-1111-4111-8111-111111111111'});
+    const url=new URL(value.url);assert.equal(url.origin,'https://workspace.progre.it');assert.equal(url.pathname,'/assistente-ai');
+    assert.equal(url.searchParams.get('kind'),kind);assert.equal(value.requiresHuman,true);
+    await assert.rejects(startInteraction({type:'confirmation',proposal:{kind,id:'11111111-1111-4111-8111-111111111111'},client:{request:()=>calls++}}),/completo in Workspace/);
+  }
+  assert.equal(calls,0);assert.equal(interactions,0);
+  await assert.rejects(bridge.call('BRAIN_REVIEW',{kind:'email-delegation',id:'11111111-1111-4111-8111-111111111111',confirm:true}),/non validi/);
+});

@@ -3,12 +3,12 @@ import {handleSecondBrain} from './handler.js';
 import {ORIGIN,RESOURCE,ISSUER,fail,adminClient,check,authorizationInput,grantConnection,exchangeToken,remoteSession} from './online-auth.js';
 
 const empty={type:'object',properties:{},additionalProperties:false};
-const reviewSchema={type:'object',additionalProperties:false,required:['kind','id'],properties:{kind:{type:'string',enum:['brain','controlled','heading']},id:{type:'string',format:'uuid'}}};
+const reviewSchema={type:'object',additionalProperties:false,required:['kind','id'],properties:{kind:{type:'string',enum:['brain','controlled','heading','email','email-delegation']},id:{type:'string',format:'uuid'}}};
 const localTools=[{name:'BRAIN_STATUS',description:'Verifica identita Workspace e collegamento online. Non restituisce credenziali.',inputSchema:empty,annotations:{readOnlyHint:true}},{name:'BRAIN_REVIEW',description:'Restituisce il collegamento al riepilogo in Workspace, dove la persona verifica e conferma. Non automatizzare quella pagina. Nessuna modifica viene applicata da questo strumento.',inputSchema:reviewSchema,annotations:{readOnlyHint:true}}];
 const content=value=>({content:[{type:'text',text:JSON.stringify(value)}]});
 const bearer=req=>String(req.headers.authorization||'').replace(/^Bearer /,'');
 const body=req=>typeof req.body==='string'?Object.fromEntries(new URLSearchParams(req.body)):req.body||{};
-export const onlineStatus=catalog=>({connected:true,online:true,identity:catalog.identity,productionPermissions:catalog.productionPermissions||[],externalModelCalls:false,financialTools:catalog.tools.filter(t=>/^MEXAL_(?:FINANCE|ARCHIVE|CASHFLOW|BANK_BALANCES)_/.test(t.name)).map(t=>t.name),toolDiscovery:'Se financialTools elenca strumenti non disponibili nella chat, aggiornare le azioni della connessione esistente nelle impostazioni del plugin; non cambiare i permessi Workspace.'});
+export const onlineStatus=catalog=>({connected:true,online:true,identity:catalog.identity,productionPermissions:catalog.productionPermissions||[],externalModelCalls:false,emailTools:catalog.tools.filter(t=>/^WORKSPACE_EMAIL_/.test(t.name)).map(t=>t.name),financialTools:catalog.tools.filter(t=>/^MEXAL_(?:FINANCE|ARCHIVE|CASHFLOW|BANK_BALANCES)_/.test(t.name)).map(t=>t.name),toolDiscovery:'Se financialTools elenca strumenti non disponibili nella chat, aggiornare le azioni della connessione esistente nelle impostazioni del plugin; non cambiare i permessi Workspace.'});
 
 export async function handleOnline(req,res){
  res.setHeader('Cache-Control','no-store');res.setHeader('Referrer-Policy','same-origin');res.setHeader('X-Content-Type-Options','nosniff');
@@ -67,7 +67,7 @@ export async function handleOnline(req,res){
    try{
     if(name==='BRAIN_STATUS')result=content(onlineStatus(catalog));
     else if(name==='BRAIN_REVIEW'){
-     if(!['brain','controlled','heading'].includes(args.kind)||!/^[a-f0-9-]{36}$/i.test(args.id||''))throw fail('Proposta non valida.');
+     if(!['brain','controlled','heading','email','email-delegation'].includes(args.kind)||!/^[a-f0-9-]{36}$/i.test(args.id||''))throw fail('Proposta non valida.');
      result=content({requiresHuman:true,url:ORIGIN+'/assistente-ai?'+new URLSearchParams({view:'review',kind:args.kind,proposalId:args.id}),message:'Apri Workspace e conferma personalmente il riepilogo. Non automatizzare la conferma.'});
     }else result=content(await handleSecondBrain({...forwarded,body:{action:'call',name,arguments:args}}));
    }catch(error){result={isError:true,content:[{type:'text',text:Number(error.status)<500?error.message:'Operazione non conclusa. Verifica lo stato prima di ripetere.'}]};}

@@ -6,6 +6,7 @@ export function page(title, content, nonce) {
   return `<!doctype html><html lang="it"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${escape(title)}</title><style nonce="${nonce}">body{font:17px system-ui;background:#f1f5f7;color:#142f3d;max-width:760px;margin:5vh auto;padding:24px}main{background:white;padding:28px;border-radius:16px}label{display:block;margin:18px 0}input{display:block;width:95%;padding:12px;font:inherit}button{padding:12px 20px;margin:12px 8px 0 0;font:inherit;cursor:pointer}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px}small{color:#52636b}</style><main><h1>${escape(title)}</h1>${content}</main></html>`;
 }
 export async function startInteraction({ type, client, proposal, onChanged = () => {}, ttlMs = 300000 }) {
+  if (type === 'confirmation' && ['email','email-delegation'].includes(proposal?.kind)) throw new Error('Aprire il riepilogo email completo in Workspace.');
   const secret = randomBytes(32).toString('hex'), nonce = randomBytes(16).toString('hex');
   let status = 'waiting', outcome = null, busy = false;
   // Receipts and credentials never enter MCP outputs or model context.

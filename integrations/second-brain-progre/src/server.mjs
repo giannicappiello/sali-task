@@ -14,7 +14,7 @@ const localTools = [
   { name: 'BRAIN_LOGIN', description: 'Apre una pagina locale per collegare personalmente Workspace. L’utente inserisce le credenziali nel browser, mai nella chat. Non automatizzare il login.', inputSchema: empty },
   { name: 'BRAIN_STATUS', description: 'Verifica collegamento, identita e stato delle interazioni. Non restituisce credenziali.', inputSchema: empty, annotations: { readOnlyHint: true } },
   { name: 'BRAIN_LOGOUT', description: 'Scollega la sessione Workspace di questo utente Windows dal connettore.', inputSchema: empty },
-  { name: 'BRAIN_REVIEW', description: 'Apre la revisione umana di una proposta kind/id oppure di un archivio finanziario locale sourceArchive preparato per l’utente. L’archivio completo è ispezionabile, vincolato da impronta firmata e salvato solo dopo il click personale. Non automatizzare la pagina. Verificare lo stato persistito.', inputSchema: { type: 'object', additionalProperties: false, oneOf:[{required:['kind','id']},{required:['sourceArchive']}], properties: { sourceArchive:{type:'string',minLength:1,maxLength:2000},kind: { type:'string', enum:['controlled','heading','brain'] }, id: { type:'string', pattern:'^[a-fA-F0-9-]{36}$' } } } },
+  { name: 'BRAIN_REVIEW', description: 'Apre la revisione umana di una proposta kind/id oppure di un archivio finanziario locale sourceArchive preparato per l’utente. L’archivio completo è ispezionabile, vincolato da impronta firmata e salvato solo dopo il click personale. Non automatizzare la pagina. Verificare lo stato persistito.', inputSchema: { type: 'object', additionalProperties: false, oneOf:[{required:['kind','id']},{required:['sourceArchive']}], properties: { sourceArchive:{type:'string',minLength:1,maxLength:2000},kind: { type:'string', enum:['controlled','heading','brain','email','email-delegation'] }, id: { type:'string', pattern:'^[a-fA-F0-9-]{36}$' } } } },
 ];
 const result = value => ({ content: [{ type: 'text', text: JSON.stringify(value) }] });
 export function createBridge(client, interaction = startInteraction, notify = () => {}) {
@@ -41,7 +41,15 @@ export function createBridge(client, interaction = startInteraction, notify = ()
       return {interactionId:id,url:value.url,requiresHuman:true,scope:'personal',archiveDigest:value.archiveDigest};
     }
     if (name === 'BRAIN_LOGIN' || name === 'BRAIN_REVIEW') {
-      if (name === 'BRAIN_REVIEW' && (!['brain','controlled','heading'].includes(args.kind) || !/^[a-f0-9-]{36}$/i.test(args.id || ''))) throw new Error('Proposta non valida.');
+      if (name === 'BRAIN_REVIEW' && (!['brain','controlled','heading','email','email-delegation'].includes(args.kind) || !/^[a-f0-9-]{36}$/i.test(args.id || ''))) throw new Error('Proposta non valida.');
+      if (name === 'BRAIN_REVIEW' && ['email', 'email-delegation'].includes(args.kind)) {
+        if (Object.keys(args).some(key => !['kind','id'].includes(key))) throw new Error('Parametri revisione email non validi.');
+        // Email and delegation consent use the complete, versioned Workspace UI.
+        // Never route them through the generic local tool/input-only summary.
+        const target = new URL('/assistente-ai', 'https://workspace.progre.it');
+        target.search = new URLSearchParams({view:'review',kind:args.kind,proposalId:args.id}).toString();
+        return {url:target.href,requiresHuman:true,message:'Apri il riepilogo personale in Workspace e verifica il contenuto completo. Non automatizzare la conferma.'};
+      }
       if (interactions.size >= 20) throw new Error('Troppe interazioni: riavviare il connettore dopo aver verificato gli esiti.');
       const value = await interaction({ type:name === 'BRAIN_LOGIN' ? 'login' : 'confirmation', proposal: args, client, onChanged: () => { catalog = null; notify(); } });
       if (value.terminal) return value;

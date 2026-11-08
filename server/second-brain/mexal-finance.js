@@ -3,7 +3,6 @@ import { buildMexalClient } from '../mexal/sync-products.js';
 import { hasCredentials } from './credential-guard.js';
 import { objectSchema } from './schema.js';
 import { requireAnalyticsScope } from './production-report-reads.js';
-import { canReadModule } from '../ai/operational-read.js';
 
 const fail=(message,status=400)=>Object.assign(Error(message),{status});
 const digest=value=>createHash('sha256').update(value).digest('hex');
@@ -27,9 +26,13 @@ export function checkedFinancePath(value,capability) {
  if(!regex.test(value))throw fail('Percorso non pubblicato per questa capacità Mexal.',403);
  return value;
 }
-export const canReadFinance=auth=>auth.profile?.ruoli?.amministratore_workspace===true&&canReadModule(auth,['integrazioni']);
+// Like the existing Mexal /help administration service, this is an admin
+// capability, not a business-module grant. workspace_ai_capabilities has a
+// fixed business-module list that cannot contain "integrazioni". Never invent
+// a new required grant or widen that list to expose an admin-only service.
+export const canReadFinance=auth=>auth.capabilities?.internal_data===true&&auth.profile?.ruoli?.amministratore_workspace===true;
 export async function requireFinanceAdmin(auth) {
- if(!canReadFinance(auth))throw fail('Lettura economico-finanziaria Mexal riservata all’amministratore Workspace nel perimetro AI integrazioni.',403);
+ if(!canReadFinance(auth))throw fail('Lettura economico-finanziaria Mexal riservata all’amministratore Workspace.',403);
  const {data,error}=await auth.scoped.rpc('workspace_user_is_admin');
  if(error)throw fail('Verifica amministratore non disponibile.',503);
  if(data!==true)throw fail('Amministratore non verificato.',403);

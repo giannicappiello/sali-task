@@ -4,7 +4,7 @@ Requisiti confermati dal titolare l'8 novembre 2026: lettura e memorizzazione de
 
 ## Connessione e autorizzazioni
 
-Si riusa `buildMexalClient`, lo stesso client e le stesse credenziali server già configurati per Workspace. Nessuna seconda connessione, nuova credenziale, modifica SQL, policy RLS o modifica a ruoli/permessi. I nuovi strumenti finanziari richiedono il profilo amministratore Workspace, dati interni abilitati, il modulo `integrazioni` nel perimetro AI se questo è esplicitamente limitato, conferma live dell'admin tramite `workspace_user_is_admin` e scope `tutti`. Errori o ambiti più ristretti bloccano prima di contattare Mexal. Questi strumenti non estendono l'accesso degli altri utenti.
+Si riusa `buildMexalClient`, lo stesso client e le stesse credenziali server già configurati per Workspace. Nessuna seconda connessione, nuova credenziale, modifica SQL, policy RLS o modifica a ruoli/permessi. I nuovi strumenti finanziari richiedono il profilo amministratore Workspace, dati interni abilitati, conferma live dell'admin tramite `workspace_user_is_admin` e scope `tutti`. Si usa il vincolo admin del servizio Mexal esistente; il catalogo AI contiene soltanto moduli aziendali, non il modulo tecnico `integrazioni`, che non deve essere inventato come grant aggiuntivo. Errori o ambiti più ristretti bloccano prima di contattare Mexal. Questi strumenti non estendono l'accesso degli altri utenti.
 
 ## Strumenti
 

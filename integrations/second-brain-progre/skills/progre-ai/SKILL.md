@@ -16,6 +16,10 @@ Assistente aziendale per analisi e operazioni tramite il connettore Second Brain
 
 ## Moduli da leggere quando servono
 
+- [Saldi bancari Mexal](references/mexal-bank-balances.md): aperture attestate, variazioni, saldi contabili e limiti bancari.
+
+- [Dettaglio prima nota e cash flow](references/mexal-cashflow-detail.md): tutti gli esercizi e intervalli richiesti, contropartite, giroconti e riconciliazione del prospetto.
+
 - [Capacità e gap verificati](references/capabilities.md): disponibilità, evidenze datate e limiti del connettore; rileggere prima di affermare supporto operativo.
 - [Analisi aziendali](references/analytics.md): produzione, costi, produttività, commerciale, finanza e qualità.
 - [Chiusure e aperture](references/production.md): ordinaria, forzata, avvio bloccato, riapertura di lavorazioni concluse e ripresa chiusura.

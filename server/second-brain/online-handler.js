@@ -8,7 +8,7 @@ const localTools=[{name:'BRAIN_STATUS',description:'Verifica identita Workspace 
 const content=value=>({content:[{type:'text',text:JSON.stringify(value)}]});
 const bearer=req=>String(req.headers.authorization||'').replace(/^Bearer /,'');
 const body=req=>typeof req.body==='string'?Object.fromEntries(new URLSearchParams(req.body)):req.body||{};
-export const onlineStatus=catalog=>({connected:true,online:true,identity:catalog.identity,productionPermissions:catalog.productionPermissions||[],externalModelCalls:false,financialTools:catalog.tools.filter(t=>/^MEXAL_(?:FINANCE|ARCHIVE|CASHFLOW)_/.test(t.name)).map(t=>t.name),toolDiscovery:'Se financialTools elenca strumenti non disponibili nella chat, aggiornare le azioni della connessione esistente nelle impostazioni del plugin; non cambiare i permessi Workspace.'});
+export const onlineStatus=catalog=>({connected:true,online:true,identity:catalog.identity,productionPermissions:catalog.productionPermissions||[],externalModelCalls:false,financialTools:catalog.tools.filter(t=>/^MEXAL_(?:FINANCE|ARCHIVE|CASHFLOW|BANK_BALANCES)_/.test(t.name)).map(t=>t.name),toolDiscovery:'Se financialTools elenca strumenti non disponibili nella chat, aggiornare le azioni della connessione esistente nelle impostazioni del plugin; non cambiare i permessi Workspace.'});
 
 export async function handleOnline(req,res){
  res.setHeader('Cache-Control','no-store');res.setHeader('Referrer-Policy','same-origin');res.setHeader('X-Content-Type-Options','nosniff');

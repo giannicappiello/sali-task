@@ -6,6 +6,7 @@ import { createVault } from './vault.mjs';
 import { createClient } from './client.mjs';
 import { startInteraction } from './interactive.mjs';
 import { startHistoryImport } from './history-ui.mjs';
+import { startSourceImportReview } from './source-import-ui.mjs';
 
 const empty = { type: 'object', properties: {}, additionalProperties: false };
 const localTools = [
@@ -13,7 +14,7 @@ const localTools = [
   { name: 'BRAIN_LOGIN', description: 'Apre una pagina locale per collegare personalmente Workspace. L’utente inserisce le credenziali nel browser, mai nella chat. Non automatizzare il login.', inputSchema: empty },
   { name: 'BRAIN_STATUS', description: 'Verifica collegamento, identita e stato delle interazioni. Non restituisce credenziali.', inputSchema: empty, annotations: { readOnlyHint: true } },
   { name: 'BRAIN_LOGOUT', description: 'Scollega la sessione Workspace di questo utente Windows dal connettore.', inputSchema: empty },
-  { name: 'BRAIN_REVIEW', description: 'Apre un riepilogo locale per la conferma umana della proposta. Non esegue la modifica. Non automatizzare la pagina di conferma. Dopo il click dell’utente leggere BRAIN_STATUS e lo stato autorevole.', inputSchema: { type: 'object', additionalProperties: false, required: ['kind','id'], properties: { kind: { type:'string', enum:['controlled','heading','brain'] }, id: { type:'string', pattern:'^[a-fA-F0-9-]{36}$' } } } },
+  { name: 'BRAIN_REVIEW', description: 'Apre la revisione umana di una proposta kind/id oppure di un archivio finanziario locale sourceArchive preparato per l’utente. L’archivio completo è ispezionabile, vincolato da impronta firmata e salvato solo dopo il click personale. Non automatizzare la pagina. Verificare lo stato persistito.', inputSchema: { type: 'object', additionalProperties: false, oneOf:[{required:['kind','id']},{required:['sourceArchive']}], properties: { sourceArchive:{type:'string',minLength:1,maxLength:2000},kind: { type:'string', enum:['controlled','heading','brain'] }, id: { type:'string', pattern:'^[a-fA-F0-9-]{36}$' } } } },
 ];
 const result = value => ({ content: [{ type: 'text', text: JSON.stringify(value) }] });
 export function createBridge(client, interaction = startInteraction, notify = () => {}) {
@@ -32,6 +33,12 @@ export function createBridge(client, interaction = startInteraction, notify = ()
       if(interactions.size>=20)throw new Error('Troppe interazioni aperte.');
       const value=await startHistoryImport(client),id=randomUUID();interactions.set(id,value);
       return {interactionId:id,url:value.url,requiresHuman:true,scope:'personal'};
+    }
+    if(name==='BRAIN_REVIEW'&&args.sourceArchive){
+      if(Object.keys(args).some(k=>k!=='sourceArchive')||typeof args.sourceArchive!=='string')throw Error('Parametri revisione archivio non validi.');
+      if(interactions.size>=20)throw Error('Troppe interazioni aperte.');
+      const value=await startSourceImportReview(client,args.sourceArchive),id=randomUUID();interactions.set(id,value);
+      return {interactionId:id,url:value.url,requiresHuman:true,scope:'personal',archiveDigest:value.archiveDigest};
     }
     if (name === 'BRAIN_LOGIN' || name === 'BRAIN_REVIEW') {
       if (name === 'BRAIN_REVIEW' && (!['brain','controlled','heading'].includes(args.kind) || !/^[a-f0-9-]{36}$/i.test(args.id || ''))) throw new Error('Proposta non valida.');

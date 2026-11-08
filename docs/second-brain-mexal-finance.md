@@ -41,3 +41,13 @@ Il codice locale non dispone delle variabili della connessione Mexal di produzio
 Validazione: 99 test Node superati su connettore, autorizzazioni, snapshot, parità consuntivi e nuove letture; lint mirato e build Vite/PWA riusciti. Nessun dato finanziario è stato importato durante i test. Lettura HR admin riuscita nella sessione corrente; non è attestazione di ogni autorizzazione Mexal.
 
 Riferimenti primari: [Web API Mexal — manuale ufficiale](https://www.edupass.it/manuali/manualistica-passcom/manuale-prodotto?a=manuale-passweb-ecommerce%2Fconfigurazione%2Fmexal--configurazione-gestionale%2Fweb-api-mexal), [Novità WebAPI — endpoint scadenzario](https://www.edupass.it/StreamFile/Resources/materialevideocorsiriservati/novit-webapi.pdf). Il contratto operativo resta `/help` della specifica installazione, verificato a ogni chiamata.
+
+## Importazione GRE 2026 con revisione umana in blocco
+
+BRAIN_REVIEW accetta anche `sourceArchive`, percorso assoluto di un archivio locale `second-brain-source-import-v1` preparato dalle letture autorizzate. La pagina mostra perimetro, conteggi, gap e permette di ispezionare l'intero contenuto. Aprire la pagina non salva nulla. Solo il click personale avvia i lotti, inizialmente nella memoria personale.
+
+Il backend firma un impegno Merkle sull'esatto insieme dei frammenti, legato all'identità e con scadenza. Ogni lotto verifica firma, identità, amministratore live, ambito globale autorizzato, livello AI, prova di appartenenza e contenuto; rifiuta credenziali, modifiche di ambito e frammenti alterati. Il caricamento usa il servizio SECURITY INVOKER esistente, che conserva RLS, proposte/audit MEMORY_SAVE e deduplicazione per fonte. Nessuna migrazione, nuova concessione o modifica di ruoli. Ricevute e credenziali rimangono interne alla pagina locale.
+
+Lotti transazionali fino a quattro frammenti mantengono le richieste sotto i limiti esistenti. Un errore interrompe il caricamento e richiede verifica dello stato; una nuova versione dell'archivio non deve essere usata come retry del precedente. I dati restano copie storiche: per informazioni correnti rileggere Mexal. Le voci non disponibili (es. bilancio ufficiale non pubblicato nel catalogo) restano gap espliciti, senza ricostruzioni di calcolo.
+
+La raccolta deve interrompersi se il cursore Mexal ripete lo stesso snapshot origine. Le righe ripetute non sono nuove registrazioni e non dimostrano completezza. L'8 novembre la raccolta dello scadenzario P ha evidenziato questa condizione dopo 7.379 righe. Centri costo/ricavo: GET riuscito GRE/2026, risposta dati=[], senza successivo cursore; non è prova dell'assenza in altre funzioni dell'installazione.

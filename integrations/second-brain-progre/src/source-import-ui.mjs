@@ -14,7 +14,8 @@ export async function startSourceImportReview(client,path,ttlMs=3600000){
  const tree=importTree(archive.entries),identity=owner;
  // A signed commitment binds every later batch to the exact content reviewed.
  // The receipt stays inside this local UI and is never returned to the model.
- const confirmation=await client.request({action:'source_import_confirmation',manifest:{root:tree.root,entries:archive.entries.length}});
+ const manifest={root:tree.root,entries:archive.entries.length};
+ let confirmation=await client.request({action:'source_import_confirmation',manifest}),receiptIssuedAt=Date.now();
  if(confirmation.identity.id!==identity)throw Error('Identità cambiata.');
  const secret=randomBytes(32).toString('hex'),nonce=randomBytes(16).toString('hex');
  let status='waiting',imported=0,error=null,closed=false;
@@ -22,6 +23,13 @@ export async function startSourceImportReview(client,path,ttlMs=3600000){
   try{
    for(let i=0;i<archive.entries.length;i+=4){
     if(closed){status='cancelled';return;}
+    // Long imports may outlive a receipt. Renew only the identical reviewed
+    // commitment, while this human-started operation is still running.
+    if(Date.now()-receiptIssuedAt>3000000){
+     const renewed=await client.request({action:'source_import_confirmation',manifest});
+     if(renewed.identity.id!==identity)throw Error('Identità cambiata.');
+     confirmation=renewed;receiptIssuedAt=Date.now();
+    }
     const entries=archive.entries.slice(i,i+4),proofs=entries.map((_,j)=>tree.proof(i+j));
     const result=await client.request({action:'source_import_batch',receipt:confirmation.receipt,entries,proofs});
     if(result.imported!==entries.length)throw Error('Conteggio persistito inatteso.');

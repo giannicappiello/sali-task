@@ -70,6 +70,8 @@ Ogni stop resta visibile in `sources`, senza totali registrati completi.
 Controlli di date, causali, identificativi, importi, anagrafiche duplicate, testate
 duplicate/mancanti, testate senza righe, causali incoerenti, dare/avere per
 data/progressivo. I dettagli mostrano ogni conto e la sua classificazione.
+Le causali personalizzate numeriche, osservate in GRE (es. `24`), sono conservate
+come codici originali e confrontate con le testate, senza attribuirne un significato.
 
 Lettura non transazionale. Hash e quadratura non provano completezza contabile né
 assenza di righe duplicate bilanciate quando manca un identificativo di riga.

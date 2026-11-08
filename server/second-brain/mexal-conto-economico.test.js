@@ -37,6 +37,9 @@ test('missing and duplicate account assignments never become patrimonial exclusi
 test('period filtering uses registration date with inclusive endpoints, no document-date allocations',()=>{
  const r=run([...rows,row('sales',-50,9,'FE','20261031'),row('bank',50,9,'FE','20261031'),row('sales',-99,10,'FE','20261101'),row('bank',99,10,'FE','20261101')]);assert.equal(r.ricavi.registeredAmount,'150.000001');assert.equal(r.coverage.outsidePeriodRows,2);
 });
+test('numeric custom causes observed in GRE remain ordinary recorded entries with header reconciliation',()=>{
+ const r=run([row('services','30',1,'24'),row('bank','-30',1,'24')]);assert.equal(r.coverage.invalidRows,0);assert.equal(r.coverage.invalidHeaders,0);assert.equal(r.reconciliation.journalBalanceAndHeaderCoverage,true);assert.equal(r.costiPerNatura.find(c=>c.classification==='B7').registeredAmount,'30.00');
+});
 test('partial sources suppress zeros and totals, but preserve explicit observed partial subtotals',()=>{
  const r=run(rows,{journal:{rows,complete:false}});assert.equal(r.ricavi.registeredAmount,null);assert.equal(r.ricavi.observedClassifiedSubtotal,'100.000001');assert.equal(r.coverage.cursorsExhausted,false);
  const empty=run([]);assert.equal(empty.ricavi.registeredAmount,null);assert.equal(empty.registeredOperatingDifference.amount,null);

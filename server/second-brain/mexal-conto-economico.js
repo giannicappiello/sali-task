@@ -26,7 +26,9 @@ const cause=r=>String(r.cau_contabile||'').trim().toUpperCase();
 const journalKey=r=>{
  const date=iso(r.data_registr);
  if(!Number.isSafeInteger(r.progressivo)||r.progressivo<1||!date)throw fail('Identificativo registrazione non valido.');
- if(!/^[A-Z]{2}$/.test(cause(r)))throw fail('Causale non attestata.');
+ // GRE publishes custom numeric causes (e.g. "24") as well as fixed letters.
+ // Their original code is compared with the header; no meaning is inferred.
+ if(!/^[A-Z0-9]{2}$/.test(cause(r)))throw fail('Causale non attestata.');
  return date+'|'+r.progressivo;
 };
 

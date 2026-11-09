@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { chatEmailTools } from './chat-email-tools.js';
 import { handleSecondBrain } from './handler.js';
+import { validateInput } from './schema.js';
 const id='11111111-1111-4111-8111-111111111111', hash='a'.repeat(64);
 const auth={profile:{id,nome:'Test',ruoli:{}},capabilities:{internal_data:true,role_ai_level:'conferma',allowed_modules:[]},access:{modules:[],module_levels:{}}};
 test('chat email tools do not require tasks or activity access and cannot activate delegation',()=>{
@@ -19,11 +20,11 @@ test('prepare and delegation proposals never dispatch',async()=>{
  const proposal=await tools.WORKSPACE_EMAIL_DELEGATION_PROPOSE.execute({});assert.equal(proposal.enabled,false);assert.equal(proposal.requiresHuman,true);assert.equal(proposal.reviewKind,'email-delegation');assert.equal(dispatch,0);
 });
 test('denied delegated send does not fall back to a human approval or dispatch',async()=>{
- let dispatch=0;const tools=chatEmailTools(auth,{transport:async()=>({ready:true,status:'ready'}),service:{sendChatEmail:async()=>{throw Object.assign(Error('EMAIL_DELEGATION_REQUIRED'),{status:403});}},schedule:()=>dispatch++});
+ let dispatch=0;const tools=chatEmailTools(auth,{transport:async()=>({ready:true,status:'ready'}),service:{getChatEmail:async()=>({id,transport_protocol_version:1}),sendChatEmail:async()=>{throw Object.assign(Error('EMAIL_DELEGATION_REQUIRED'),{status:403});}},schedule:()=>dispatch++});
  await assert.rejects(tools.WORKSPACE_EMAIL_SEND.execute({id,expectedHash:hash}),/DELEGATION_REQUIRED/);assert.equal(dispatch,0);
 });
 test('delegated send preserves exact id/hash and reports acceptance truthfully',async()=>{
- let observed;const tools=chatEmailTools(auth,{transport:async()=>({ready:true,status:'ready'}),service:{sendChatEmail:async(_auth,input)=>{observed=input;return {id,status:'accepted'};}},schedule:()=>undefined});
+ let observed;const tools=chatEmailTools(auth,{transport:async()=>({ready:true,status:'ready'}),service:{getChatEmail:async()=>({id,transport_protocol_version:1}),sendChatEmail:async(_auth,input)=>{observed=input;return {id,status:'accepted'};}},schedule:()=>undefined});
  const value=await tools.WORKSPACE_EMAIL_SEND.execute({id,expectedHash:hash});assert.deepEqual(observed,{id,expectedHash:hash});assert.equal(value.accepted,true);assert.equal(value.deliveryVerified,false);
 });
 function setupDelegation(status='proposed') {
@@ -44,4 +45,18 @@ test('one-off chat email human review uses no activity permission or task',async
  const row={id,author_id:id,source_kind:'chat',task_id:null,via_ai:true,status:'proposed',payload_hash:hash};let decided=0;
  const d={authorize:async()=>auth,catalog:()=>({}),receiptKey:'key',emailService:{getActivityEmail:async()=>row,hashActivityEmail:()=>hash,decideActivityEmail:async()=>{throw Error('wrong path');}},chatService:{getChatEmail:async()=>row,decideChatEmailHuman:async()=>{decided++;return {...row,status:'rejected'};}}};
  const preview=await handleSecondBrain({method:'POST',body:{action:'confirmation',kind:'email',id}},d);const outcome=await handleSecondBrain({method:'POST',body:{action:'decide',receipt:preview.receipt,decision:'reject'}},d);assert.equal(outcome.email.status,'rejected');assert.equal(decided,1);
+});
+
+test('multi-recipient capability and send require protocol 2 transport',async()=>{
+ let sent=0;const checked=[];const tools=chatEmailTools(auth,{transport:async({requiredProtocol})=>{checked.push(requiredProtocol);return requiredProtocol===1?{ready:true,status:'ready'}:{ready:false,status:'unsupported'};},service:{getChatEmailCapability:async()=>({canSend:true,canSendMultiple:true}),getChatEmail:async()=>({id,transport_protocol_version:2}),sendChatEmail:async()=>{sent++;}},schedule:()=>assert.fail('must not dispatch')});
+ const capability=await tools.WORKSPACE_EMAIL_CAPABILITY.execute({});assert.equal(capability.canSend,true);assert.equal(capability.canSendMultiple,false);
+ await assert.rejects(tools.WORKSPACE_EMAIL_SEND.execute({id,expectedHash:hash}),/trasporto Workspace/);assert.equal(sent,0);assert.deepEqual(checked,[1,2,2]);
+});
+
+test('recipient schema accepts either legacy recipient or To/CC and never both',()=>{
+ const schema=chatEmailTools(auth).WORKSPACE_EMAIL_PREPARE.inputSchema;
+ const content={subject:'Subject',body:'Body',idempotencyKey:id};
+ assert.deepEqual(validateInput(schema,{...content,to:['one@example.test'],cc:['copy@example.test']}),{...content,to:['one@example.test'],cc:['copy@example.test']});
+ validateInput(schema,{...content,recipient:'one@example.test'});
+ for(const recipients of [{},{to:[]},{cc:['copy@example.test']},{recipient:'one@example.test',to:['one@example.test']},{recipient:'one@example.test',cc:[]},{to:['one@example.test'],bcc:[]}]) assert.throws(()=>validateInput(schema,{...content,...recipients}));
 });

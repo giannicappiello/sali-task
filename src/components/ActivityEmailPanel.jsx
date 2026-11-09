@@ -11,8 +11,11 @@ const errors = { provider_rejected: 'Il servizio email ha rifiutato il messaggio
 const emptyDraft = { recipient: '', subject: '', body: '' };
 
 function EmailContent({ email }) {
+  const to = Array.isArray(email.to_recipients) ? email.to_recipients : email.recipient ? [email.recipient] : [];
+  const cc = Array.isArray(email.cc_recipients) ? email.cc_recipients : [];
   return <dl className="activity-email-content">
-    <dt>Destinatario</dt><dd>{email.recipient}</dd>
+    <dt>A (To)</dt><dd><ul aria-label="Destinatari A (To)">{to.map((address, index) => <li key={index}>{address}</li>)}</ul></dd>
+    <dt>CC</dt><dd>{cc.length ? <ul aria-label="Destinatari CC">{cc.map((address, index) => <li key={index}>{address}</li>)}</ul> : 'Nessuno'}</dd>
     <dt>Oggetto</dt><dd>{email.subject}</dd>
     <dt>Testo completo</dt><dd className="activity-email-body">{email.body}</dd>
     <dt>Stato</dt><dd>{statuses[email.status] || 'Stato non riconosciuto: aggiorna lo storico'}</dd>
@@ -194,7 +197,7 @@ function ActivityEmailTask({ taskId, request }) {
     {review && <section className="activity-email-review" aria-labelledby={`${uid}-review`}>
       <h4 id={`${uid}-review`} ref={reviewHeading} tabIndex={-1}>Verifica prima dell’invio</h4>
       <EmailContent email={review.email} />
-      <p>Confermando, autorizzi l’invio di questo testo a questo destinatario.</p>
+      <p>Confermando, autorizzi l’invio di questo testo a tutti i destinatari elencati in A (To) e CC.</p>
       <div className="activity-email-actions">
         <button type="button" className="primary-action" disabled={busy} onClick={() => decide('confirm')}>Conferma e invia</button>
         <button type="button" className="secondary-action" disabled={busy} onClick={() => decide('reject')}>Rifiuta proposta</button>

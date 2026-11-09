@@ -1,4 +1,4 @@
-import { isPermanentSmtpError } from './smtp-client.js';
+import { normalizeTransportRecipients, isPermanentSmtpError } from './smtp-client.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -9,9 +9,13 @@ async function rpc(db, name, args) {
   return data;
 }
 
-export async function claimActivityEmail(db, worker) {
+export async function claimActivityEmail(db, worker, protocol = 1) {
+  if (![1, 2].includes(protocol)) throw new Error('Invalid activity email protocol.');
   await rpc(db, 'workspace_expire_email_claims', {});
-  const data = await rpc(db, 'workspace_claim_email', {p_worker: worker});
+  // Select compatible rows inside the atomic SQL claim, never after claiming.
+  const data = protocol === 1
+    ? await rpc(db, 'workspace_claim_email', {p_worker: worker})
+    : await rpc(db, 'workspace_claim_email_v2', {p_worker: worker, p_transport_protocol_version: protocol});
   return Array.isArray(data) ? data[0] || null : data || null;
 }
 
@@ -23,19 +27,21 @@ export async function finishActivityEmail(db, job, status, messageId = null, err
   if (updated !== true) throw new Error('Activity email claim is no longer current.');
 }
 
-export async function claimActivityForHttpWorker(db, worker) {
+export async function claimActivityForHttpWorker(db, worker, protocol = 1) {
   // Claim is atomically sending before any payload leaves this process. Losing
   // the claim response therefore cannot cause an automatic duplicate send.
-  const job = await claimActivityEmail(db, worker);
+  const job = await claimActivityEmail(db, worker, protocol);
   if (!job) return null;
-  return {status:'claimed', worker_id:worker, activity_email_protocol:1,
+  const version = job.transport_protocol_version ?? 1;
+  return {status:'claimed', worker_id:worker, activity_email_protocol:version,
     email:{id:`activity:${job.id}`, lock_token:job.lock_token,
-      destinatario:job.recipient, oggetto:job.subject, corpo:job.body}, attachments:[]};
+      destinatario:job.recipient, oggetto:job.subject, corpo:job.body,
+      ...(version === 2 ? {to_recipients:job.to_recipients, cc_recipients:job.cc_recipients} : {})}, attachments:[]};
 }
 
 export async function activityWorkerAction(db, payload) {
   const id = String(payload.email_id || '').slice('activity:'.length);
-  if (payload.activity_email_protocol !== 1 || !UUID.test(id) || !UUID.test(String(payload.lock_token || ''))
+  if (![1, 2].includes(payload.activity_email_protocol) || !UUID.test(id) || !UUID.test(String(payload.lock_token || ''))
       || !['accepted','failed','uncertain'].includes(payload.action)) {
     throw new Error('Invalid activity email protocol.');
   }
@@ -47,11 +53,18 @@ export async function activityWorkerAction(db, payload) {
 }
 
 export async function processNextActivityEmailJob({supabase,smtp,workerId,isPermanentError=isPermanentSmtpError}) {
-  const job = await claimActivityEmail(supabase,workerId);
+  const job = await claimActivityEmail(supabase,workerId,2);
   if (!job) return {status:'idle'};
   let accepted = false;
   try {
-    const result = await smtp.send({to:job.recipient,subject:job.subject,text:job.body,attachments:[]});
+    const version = job.transport_protocol_version ?? 1;
+    if (![1, 2].includes(version)
+        || (version === 2 && (!Array.isArray(job.to_recipients) || !Array.isArray(job.cc_recipients)))
+        || (version === 1 && (job.to_recipients != null || job.cc_recipients != null))) throw Object.assign(new Error('Invalid activity email protocol.'), {code:'EENVELOPE'});
+    const recipients = normalizeTransportRecipients(version === 2 ? job.to_recipients : job.recipient,
+      version === 2 ? job.cc_recipients : []);
+    const result = await smtp.send({to:version === 1 ? recipients.to[0] : recipients.to,
+      ...(version === 2 ? {cc:recipients.cc} : {}),subject:job.subject,text:job.body,attachments:[]});
     accepted = true;
     await finishActivityEmail(supabase,job,'accepted',result.messageId);
     return {status:'accepted',emailId:job.id};
@@ -71,7 +84,7 @@ export async function processNextActivityEmailJob({supabase,smtp,workerId,isPerm
 }
 
 // Read-only readiness check. Never return URLs, secrets or provider diagnostics.
-export async function getActivityEmailTransport({fetchImpl=fetch,environment=globalThis.process?.env || {}}={}) {
+export async function getActivityEmailTransport({fetchImpl=fetch,environment=globalThis.process?.env || {},requiredProtocol=1}={}) {
   const url = String(environment.ARUBA_EMAIL_WORKER_URL || '').trim();
   const secret = String(environment.ARUBA_EMAIL_WORKER_SECRET || '').trim();
   if (!url || !secret) return {ready:false,status:'not_configured'};
@@ -83,7 +96,9 @@ export async function getActivityEmailTransport({fetchImpl=fetch,environment=glo
       headers:{'X-Progre-Worker-Secret':secret},redirect:'error',signal:AbortSignal.timeout(15000)});
     if (!response.ok) return {ready:false,status:'unsupported'};
     const capability = await response.json();
-    if (capability.activity_email_protocol !== 1) return {ready:false,status:'unsupported'};
+    const supported = Array.isArray(capability.activity_email_protocols)
+      ? capability.activity_email_protocols : [capability.activity_email_protocol];
+    if (![1, 2].includes(requiredProtocol) || !supported.includes(requiredProtocol)) return {ready:false,status:'unsupported'};
     if (capability.queue_enabled !== true) return {ready:false,status:'paused'};
     return {ready:true,status:'ready'};
   } catch {
@@ -91,9 +106,9 @@ export async function getActivityEmailTransport({fetchImpl=fetch,environment=glo
   }
 }
 
-export async function requireActivityEmailTransport(check=getActivityEmailTransport) {
+export async function requireActivityEmailTransport(check=getActivityEmailTransport, options={}) {
   let transport;
-  try { transport = await check(); } catch { transport = {ready:false,status:'unavailable'}; }
+  try { transport = await check(options); } catch { transport = {ready:false,status:'unavailable'}; }
   if (transport?.ready !== true || transport?.status !== 'ready') {
     throw Object.assign(new Error('Servizio email non pronto. Occorre aggiornare o ripristinare il trasporto Workspace prima di autorizzare o accodare invii. La proposta non è stata modificata.'),
       {status:409,code:'EMAIL_TRANSPORT_NOT_READY'});
@@ -101,8 +116,8 @@ export async function requireActivityEmailTransport(check=getActivityEmailTransp
   return transport;
 }
 
-export async function triggerActivityEmailWorker({fetchImpl=fetch,environment=globalThis.process?.env || {}}={}) {
-  const transport = await getActivityEmailTransport({fetchImpl,environment});
+export async function triggerActivityEmailWorker({fetchImpl=fetch,environment=globalThis.process?.env || {},requiredProtocol=1}={}) {
+  const transport = await getActivityEmailTransport({fetchImpl,environment,requiredProtocol});
   if (!transport.ready) return {status:transport.status};
   try {
     const sent = await fetchImpl(String(environment.ARUBA_EMAIL_WORKER_URL).trim(),{method:'POST',

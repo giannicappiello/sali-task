@@ -27,7 +27,7 @@ const proposal=id=>({id,recipient:'recipient@example.com',subject:'Oggetto '+id,
 const prepared=id=>({proposal:proposal(id),receipt:'receipt-'+id,identity:{name:'Utente sintetico'},terminal:false});
 const delegation={id:'delegation-1',user_id:'user-1',status:'proposed',policy_version:'chat-email-v1',policy_hash:'fixture-hash'};
 const delegationPrepared=()=>({...prepared('delegation-1'),proposal:{...delegation}});
-const scope='Autorizzi Progre AI a inviare per tuo conto singole email di testo con il mittente aziendale configurato, soltanto quando lo chiedi espressamente in chat e ai destinatari indicati nella richiesta. Non autorizzi messaggi automatici, ricorrenti, massivi o allegati. Puoi revocare la delega.';
+const scope='Autorizzi Progre AI a inviare per tuo conto una email di testo a un solo destinatario, senza CC, con il mittente aziendale configurato, soltanto quando lo chiedi espressamente in chat. Non autorizzi messaggi automatici, ricorrenti, massivi o allegati. Puoi revocare la delega.';
 const authorize='Autorizzo gli invii richiesti in chat';
 const tick=()=>new Promise(resolve=>setTimeout(resolve,0));
 let root,host;
@@ -190,4 +190,132 @@ test('only exact HTTP 409 and known code allow retry; arbitrary server details s
 test('unknown confirmation read errors do not render arbitrary server messages',async()=>{
  const client=realClientWithFetch(async()=>({ok:false,status:500,json:async()=>({success:false,error:'PRIVATE_READ_ERROR_DETAIL'})}));
  try{await mount(client);assert.doesNotMatch(host.textContent,/PRIVATE_READ_ERROR_DETAIL/);assert.match(host.textContent,/Operazione non completata/);assert.equal(button('Conferma e invia email'),undefined);}finally{await cleanup();}
+});
+
+const recipients = label => [...host.querySelectorAll(`ul[aria-label="Destinatari ${label}"] > li`)].map(node => node.textContent);
+const multiProposal = id => ({ ...proposal(id), recipient: 'legacy-not-an-extra@example.com',
+ to_recipients: Array.from({ length: 6 }, (_, index) => `to-${index + 1}@example.com`),
+ cc_recipients: Array.from({ length: 4 }, (_, index) => `cc-${index + 1}@example.com`), transport_protocol_version: 2 });
+
+test('multi-recipient review shows every To and CC, keeps content immutable and submits only the signed receipt', async () => {
+ const email = multiProposal('mail-1'), calls = [];
+ try {
+  await mount(async (_session, input) => {
+   calls.push(input);
+   return input.action === 'confirmation' ? { ...prepared(input.id), proposal: email, receipt: 'receipt-binding-all-addresses-and-body' } : { email: { ...email, status: 'queued' } };
+  });
+  assert.deepEqual(recipients('A (To)'), email.to_recipients);
+  assert.deepEqual(recipients('CC'), email.cc_recipients);
+  assert.doesNotMatch(host.textContent, /legacy-not-an-extra/);
+  assert.equal(host.querySelector('input, textarea, [contenteditable="true"]'), null);
+  assert.match(host.textContent, /Controlla tutti i destinatari/);
+  await click('Conferma e invia email', true);
+  assert.deepEqual(calls.filter(c => c.action === 'decide'), [{ action: 'decide', receipt: 'receipt-binding-all-addresses-and-body', decision: 'confirm' }]);
+  assert.deepEqual(recipients('A (To)'), email.to_recipients);
+  assert.deepEqual(recipients('CC'), email.cc_recipients);
+ } finally { await cleanup(); }
+});
+
+test('legacy recipient and null CC remain reviewable without invented recipients', async () => {
+ for (const fields of [
+  { to_recipients: null, cc_recipients: null, transport_protocol_version: 1 },
+  { to_recipients: ['canonical@example.com'], cc_recipients: null, transport_protocol_version: 2 },
+  { to_recipients: ['canonical@example.com'], cc_recipients: [], transport_protocol_version: 2 },
+ ]) {
+  try {
+   await mount(async () => ({ ...prepared('mail-1'), proposal: { ...proposal('mail-1'), ...fields } }));
+   assert.deepEqual(recipients('A (To)'), fields.to_recipients || ['recipient@example.com']);
+   assert.deepEqual(recipients('CC'), []);
+   assert.match(host.textContent, /CC:Nessuno/);
+   assert.equal(button('Conferma e invia email').disabled, false);
+  } finally { await cleanup(); }
+ }
+});
+
+test('email review renders addresses, subject and body as plain text, never HTML', async () => {
+ const injected = '<img src=x onerror="globalThis.emailInjected=true">';
+ try {
+  await mount(async () => ({ ...prepared('mail-1'), proposal: { ...multiProposal('mail-1'), to_recipients: [injected], cc_recipients: ['<script>alert(1)</script>'], subject: injected, body: '<a href="javascript:alert(1)">test</a>' } }));
+  assert.deepEqual(recipients('A (To)'), [injected]);
+  assert.deepEqual(recipients('CC'), ['<script>alert(1)</script>']);
+  assert.equal(host.querySelector('img, script, a'), null);
+  assert.equal(globalThis.emailInjected, undefined);
+ } finally { await cleanup(); }
+});
+
+test('v2 scope and consent describe To/CC and the total limit, without inheriting v1 consent', async () => {
+ const calls = [], row = { ...delegation, id: 'delegation-2', policy_version: 'chat-email-v2' };
+ try {
+  await mount(async (_session, input) => {
+   calls.push(input);
+   if (input.action === 'confirmation') return { ...prepared(input.id), proposal: input.id === 'delegation-1' ? delegation : row };
+   return { delegation: { ...row, status: 'active' } };
+  }, 'email-delegation', 'delegation-1');
+  await consent();
+  reviewFixture.search = '?view=review&kind=email-delegation&proposalId=delegation-2'; await render();
+  assert.match(host.textContent, /uno o più destinatari in A \(To\) e CC, fino a 10 indirizzi complessivi/);
+  assert.match(host.textContent, /visibili agli altri destinatari/);
+  assert.match(host.textContent, /non viene estesa automaticamente/);
+  assert.equal(host.querySelector('input').checked, false);
+  assert.equal(button(authorize).disabled, true);
+  await click(authorize); assert.equal(calls.filter(c => c.action === 'decide').length, 0);
+  await consent(); await click(authorize, true);
+  assert.deepEqual(calls.filter(c => c.action === 'decide'), [{ action: 'decide', receipt: 'receipt-delegation-2', decision: 'confirm' }]);
+ } finally { await cleanup(); }
+});
+
+test('Back/Forward between reviews reloads canonical state and never repeats an accepted email', async () => {
+ const calls = [], statuses = { 'mail-1': 'proposed', 'mail-2': 'proposed' };
+ try {
+  await mount(async (_session, input) => {
+   calls.push(input);
+   if (input.action === 'confirmation') return { ...prepared(input.id), proposal: { ...multiProposal(input.id), status: statuses[input.id] }, terminal: statuses[input.id] !== 'proposed' };
+   statuses['mail-1'] = 'queued'; return { email: { ...multiProposal('mail-1'), status: 'queued' } };
+  });
+  await click('Conferma e invia email');
+  reviewFixture.search = '?view=review&kind=email&proposalId=mail-2'; await render();
+  reviewFixture.search = '?view=review&kind=email&proposalId=mail-1'; await render();
+  assert.match(host.textContent, /Oggetto mail-1/); assert.match(host.textContent, /Accodata/);
+  assert.equal(button('Conferma e invia email'), undefined);
+  reviewFixture.search = '?view=review&kind=email&proposalId=mail-2'; await render();
+  assert.match(host.textContent, /Oggetto mail-2/); assert.equal(button('Conferma e invia email').disabled, false);
+  assert.equal(calls.filter(c => c.action === 'decide').length, 1);
+  assert.equal(calls.filter(c => c.action === 'confirmation').length, 4);
+ } finally { await cleanup(); }
+});
+
+test('Back/Forward or a refreshed receipt clears v2 consent and cannot automate activation', async () => {
+ const calls = []; let revision = 1;
+ try {
+  await mount(async (_session, input) => {
+   calls.push(input);
+   return { ...prepared(input.id), receipt: `receipt-${input.id}-${revision}`, proposal: { ...delegation, id: input.id, policy_version: 'chat-email-v2' } };
+  }, 'email-delegation', 'delegation-1');
+  await consent();
+  for (const id of ['delegation-2', 'delegation-1', 'delegation-2']) {
+   reviewFixture.search = `?view=review&kind=email-delegation&proposalId=${id}`; await render();
+   assert.equal(host.querySelector('input').checked, false); assert.equal(button(authorize).disabled, true);
+   await consent();
+  }
+  revision++;
+  reviewFixture.auth = { session: { ...session, access_token: 'refreshed-fixture-token' } }; await render();
+  assert.equal(host.querySelector('input').checked, false); assert.equal(button(authorize).disabled, true);
+  assert.equal(calls.filter(c => c.action === 'decide').length, 0);
+ } finally { await cleanup(); }
+});
+
+test('multi-recipient timeout preserves the exact review and blocks both repeated decisions', async () => {
+ const email = multiProposal('mail-1'), calls = [];
+ try {
+  await mount(async (_session, input) => {
+   calls.push(input);
+   if (input.action === 'confirmation') return { ...prepared(input.id), proposal: email };
+   throw Error('Simulated timeout');
+  });
+  await click('Conferma e invia email', true);
+  assert.deepEqual(recipients('A (To)'), email.to_recipients); assert.deepEqual(recipients('CC'), email.cc_recipients);
+  assert.match(host.textContent, /Esito da verificare/);
+  await click('Conferma e invia email'); await click('Rifiuta');
+  assert.equal(calls.filter(c => c.action === 'decide').length, 1);
+ } finally { await cleanup(); }
 });

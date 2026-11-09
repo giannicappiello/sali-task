@@ -196,3 +196,22 @@ test('pagination appends unique rows and human-readable error does not expose ra
     assert.doesNotMatch(host.textContent, /provider_rejected/);
   } finally { await cleanup(); }
 });
+
+test('inactive activity component preserves complete multi-recipient read-only review and legacy history', async () => {
+  const multi = { ...email, id: 'multi-1', to_recipients: ['one@example.com', 'two@example.com'], cc_recipients: ['copy@example.com'] };
+  try {
+    await mount(async input => input.action === 'confirmation'
+      ? { success: true, email: multi, receipt: 'receipt-all-recipients' }
+      : context([multi, { ...email, to_recipients: null, cc_recipients: null }]));
+    await click('Verifica proposta');
+    const review = host.querySelector('.activity-email-review');
+    assert.deepEqual([...review.querySelectorAll('[aria-label="Destinatari A (To)"] li')].map(node => node.textContent), multi.to_recipients);
+    assert.deepEqual([...review.querySelectorAll('[aria-label="Destinatari CC"] li')].map(node => node.textContent), multi.cc_recipients);
+    assert.match(host.querySelector('.activity-email-history').textContent, /recipient@example.com/);
+  } finally { await cleanup(); }
+});
+
+test('activity email panel remains disconnected from application task UI', async () => {
+  const taskSource = await readFile(new URL('../src/pages/Tasks/TaskModal.jsx', import.meta.url), 'utf8');
+  assert.doesNotMatch(taskSource, /import[^;]*ActivityEmailPanel|<ActivityEmailPanel/);
+});

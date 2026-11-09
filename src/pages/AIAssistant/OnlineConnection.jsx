@@ -39,7 +39,16 @@ export function OnlineReview() {
  return <OnlineReviewContent key={`${session?.user?.id || ''}:${kind}:${id}`} session={session} kind={kind} id={id} />;
 }
 
-const CHAT_EMAIL_SCOPE = 'Autorizzi Progre AI a inviare per tuo conto singole email di testo con il mittente aziendale configurato, soltanto quando lo chiedi espressamente in chat e ai destinatari indicati nella richiesta. Non autorizzi messaggi automatici, ricorrenti, massivi o allegati. Puoi revocare la delega.';
+const CHAT_EMAIL_POLICIES = {
+ 'chat-email-v1': {
+  scope: 'Autorizzi Progre AI a inviare per tuo conto una email di testo a un solo destinatario, senza CC, con il mittente aziendale configurato, soltanto quando lo chiedi espressamente in chat. Non autorizzi messaggi automatici, ricorrenti, massivi o allegati. Puoi revocare la delega.',
+  consent: 'Ho letto l’ambito della delega e autorizzo gli invii richiesti espressamente in chat a un solo destinatario, senza CC.',
+ },
+ 'chat-email-v2': {
+  scope: 'Autorizzi Progre AI a inviare per tuo conto una email di testo a uno o più destinatari in A (To) e CC, fino a 10 indirizzi complessivi, con il mittente aziendale configurato, soltanto quando lo chiedi espressamente in chat e ai destinatari indicati nella richiesta. Gli indirizzi in A e CC sono visibili agli altri destinatari. Non autorizzi BCC, messaggi automatici, ricorrenti, massivi o allegati. Puoi revocare la delega.',
+  consent: 'Ho letto l’ambito della delega e autorizzo gli invii richiesti espressamente in chat a uno o più destinatari in A (To) e CC, fino a 10 indirizzi complessivi.',
+ },
+};
 const EMAIL_ERROR_LABELS = {
  provider_rejected: 'Il servizio email ha rifiutato il messaggio.',
  transport_uncertain: 'Il servizio non ha confermato l’esito. Verifica prima di richiedere un nuovo invio.',
@@ -48,7 +57,7 @@ const EMAIL_ERROR_LABELS = {
 
 function OnlineReviewContent({ session, kind, id }) {
  const [prepared, setPrepared] = useState(null), [outcome, setOutcome] = useState(null), [error, setError] = useState(''), [submitted, setSubmitted] = useState(false);
- const [consent, setConsent] = useState(false);
+ const [consentReceipt, setConsentReceipt] = useState(null);
  const consentId = useId();
  const pending = useRef(false);
  const live = useRef(false);
@@ -65,7 +74,9 @@ function OnlineReviewContent({ session, kind, id }) {
   return () => { active = false; };
  }, [session, kind, id, framed]);
  const delegation = isDelegation ? outcome?.delegation || prepared?.proposal : null;
- const supportedPolicy = delegation?.policy_version === 'chat-email-v1' && Boolean(delegation?.policy_hash);
+ const policy = Object.hasOwn(CHAT_EMAIL_POLICIES, delegation?.policy_version) ? CHAT_EMAIL_POLICIES[delegation.policy_version] : null;
+ const supportedPolicy = Boolean(policy && delegation?.policy_hash);
+ const consent = Boolean(prepared?.receipt && consentReceipt === prepared.receipt);
  const delegationPending = delegation?.status === 'proposed';
  const canRevoke = isDelegation && delegation?.status === 'active' && prepared?.mode === 'revoke';
  const decide = async decision => {
@@ -92,6 +103,8 @@ function OnlineReviewContent({ session, kind, id }) {
  };
  if (framed) return <section className="second-brain-page"><h1>Conferma operazione</h1><a href={location.href} target="_blank" rel="noopener noreferrer">Apri il riepilogo in una finestra separata</a></section>;
  const email = kind === 'email' ? outcome?.email || prepared?.proposal : null;
+ const toRecipients = Array.isArray(email?.to_recipients) ? email.to_recipients : email?.recipient ? [email.recipient] : [];
+ const ccRecipients = Array.isArray(email?.cc_recipients) ? email.cc_recipients : [];
  const labels = { proposed: 'Da confermare', queued: 'Accodata', sending: 'Invio in corso', accepted: 'Accettata dal server', uncertain: 'Esito incerto: verifica necessaria', failed: 'Invio non riuscito', rejected: 'Rifiutata', cancelled: 'Annullata' };
  const delegationLabels = { proposed: 'Da autorizzare', active: 'Attiva', revoked: 'Non attiva (revocata o non autorizzata)' };
  const showDecision = prepared && !prepared.terminal && !outcome && (!isDelegation || delegationPending || canRevoke);
@@ -102,12 +115,17 @@ function OnlineReviewContent({ session, kind, id }) {
   {prepared && <>
    <p>Utente: {prepared.identity?.name || session.user.email}</p>
    {isDelegation ? <article aria-label="Ambito dell’autorizzazione email">
-    <p>{CHAT_EMAIL_SCOPE}</p>
+    <p>{policy?.scope || 'Ambito dell’autorizzazione non riconosciuto. Non autorizzare questa proposta.'}</p>
+    {delegation?.policy_version === 'chat-email-v2' && <p>Questa delega richiede una nuova autorizzazione personale. Una delega precedente per un solo destinatario non viene estesa automaticamente.</p>}
     <p>Questa attivazione personale si esegue una sola volta. Dopo l’attivazione, gli invii coperti dalla delega non richiedono di aprire una task o confermare ogni email in questa pagina.</p>
     <p><strong>Stato:</strong> {delegationLabels[delegation?.status] || 'Stato da verificare'}</p>
     {delegationPending && !supportedPolicy && <p role="alert">Questa versione dell’autorizzazione non è riconosciuta. Non può essere attivata da questa pagina.</p>}
    </article> : email ? <article aria-label="Riepilogo email da approvare">
-    <p><strong>Destinatario:</strong> {email.recipient}</p><p><strong>Oggetto:</strong> {email.subject}</p>
+    <p><strong>A (To):</strong></p>
+    <ul aria-label="Destinatari A (To)" style={{ overflowWrap: 'anywhere' }}>{toRecipients.map((address, index) => <li key={index}>{address}</li>)}</ul>
+    <p><strong>CC:</strong></p>
+    {ccRecipients.length ? <ul aria-label="Destinatari CC" style={{ overflowWrap: 'anywhere' }}>{ccRecipients.map((address, index) => <li key={index}>{address}</li>)}</ul> : <p>Nessuno</p>}
+    <p><strong>Oggetto:</strong> {email.subject}</p>
     <p><strong>Testo:</strong></p><div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{email.body}</div>
     <p><strong>Stato:</strong> {labels[email.status] || 'Stato da verificare'}</p>
     <p>L’accettazione da parte del server non dimostra la consegna al destinatario.</p>
@@ -117,9 +135,9 @@ function OnlineReviewContent({ session, kind, id }) {
     <button type="button" disabled={submitted || !prepared.receipt} onClick={() => decide('reject')}>Revoca delega email</button>
    </div> : <>
     {isDelegation ? <label htmlFor={consentId} style={{ display: 'flex', flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
-     <input id={consentId} type="checkbox" checked={consent} disabled={submitted || !supportedPolicy} onChange={event => setConsent(event.target.checked)} style={{ width: 'auto', flexShrink: 0, marginTop: 4 }} />
-     <span>Ho letto l’ambito della delega e autorizzo gli invii richiesti espressamente in chat.</span>
-    </label> : <p>{email ? 'Controlla destinatario, oggetto e testo. Confermando autorizzi questa email e la inserisci nella coda di invio.' : 'Verifica la proposta completa e la situazione precedente. Questa conferma autorizza la modifica dei dati aziendali.'}</p>}
+     <input id={consentId} type="checkbox" checked={consent} disabled={submitted || !supportedPolicy} onChange={event => setConsentReceipt(event.target.checked ? prepared.receipt : null)} style={{ width: 'auto', flexShrink: 0, marginTop: 4 }} />
+     <span>{policy?.consent || 'Questa versione della delega non può essere autorizzata.'}</span>
+    </label> : <p>{email ? 'Controlla tutti i destinatari in A (To) e CC, oggetto e testo. Confermando autorizzi questa email esatta e la inserisci nella coda di invio.' : 'Verifica la proposta completa e la situazione precedente. Questa conferma autorizza la modifica dei dati aziendali.'}</p>}
     <div className="second-brain-actions">
      <button type="button" disabled={submitted || !prepared.receipt || (isDelegation && (!consent || !supportedPolicy))} onClick={() => decide('confirm')}>{isDelegation ? 'Autorizzo gli invii richiesti in chat' : email ? 'Conferma e invia email' : 'Confermo questa operazione'}</button>
      <button type="button" disabled={submitted || !prepared.receipt} onClick={() => decide('reject')}>{isDelegation ? 'Non autorizzo' : 'Rifiuta'}</button>

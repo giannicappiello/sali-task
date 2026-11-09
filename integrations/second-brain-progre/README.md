@@ -31,6 +31,14 @@ La creazione attività/progetto usa il catalogo CRM e il servizio `workspace_cre
 
 Non sono esposti SQL, shell, credenziali o deleghe al vecchio modello AI. Sviluppo del codice e analisi dei documenti vengono svolti da Codex con i suoi strumenti. Nessun comando PLC è implicito nel collegamento.
 
+## Email dalla chat e rubrica Workspace
+
+Il flusso corrente non richiede task o pannelli attivita. `WORKSPACE_CONTACTS_SEARCH` cerca gli indirizzi professionali nel perimetro autorizzato del titolare, con paginazione, stato degli indirizzi e disambiguazione; non concede accesso globale e non deduce gli indirizzi mancanti.
+
+`WORKSPACE_EMAIL_PREPARE` prepara una sola email con liste `to` e `cc`, massimo 10 destinatari complessivi, oppure il vecchio `recipient` singolo. `WORKSPACE_EMAIL_SEND` usa l’ID e l’hash della proposta immutabile, soltanto per un invio espressamente richiesto e coperto dalla delega personale. La v1 resta per un destinatario senza CC. La v2 To/CC richiede una nuova proposta esplicita `policyVersion: "chat-email-v2"`, seguita da `BRAIN_REVIEW kind=email-delegation` e consenso personale non automatizzabile; non estende le deleghe esistenti. In alternativa si puo approvare la sola email con `BRAIN_REVIEW kind=email`.
+
+La revisione mostra tutti i To/CC, oggetto e testo. `accepted` non prova la consegna e un timeout non autorizza a ripetere l’invio. Sono esclusi BCC, allegati e campagne. Gli storici protocollo 1 mantengono destinatario, hash e receipt originali; le nuove liste richiedono un worker protocollo 2. Leggere [flusso e rilascio](../../docs/chat-email.md) e [guida operativa della skill](skills/progre-ai/references/chat-email.md). Le modifiche al repository non aggiornano da sole il backend, il plugin o la skill installata e non attivano deleghe personali.
+
 ## Memoria e chat
 
 `BRAIN_MEMORY_SEARCH` ricerca nella memoria autorizzata. `MEMORY_SAVE` prepara una voce con fonte, data, categoria e visibilità personale, di reparto o aziendale. Solo un amministratore può pubblicare una voce aziendale. Le voci collegate a progetti richiedono anche accesso a quei progetti.

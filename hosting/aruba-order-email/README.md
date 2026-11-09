@@ -89,3 +89,42 @@ vengono scaricati singolarmente attraverso il backend autenticato e verificati
 con SHA-256, senza link pubblici. Gli invii incerti richiedono verifica umana;
 non vengono ripetuti automaticamente. Il piano è inizialmente disabilitato e
 si collega dalla pagina Workspace `/settings/commercial-reports`.
+
+## Email Workspace: più destinatari To e CC
+
+Il worker supporta `activity_email_protocol` 1 (storico, un destinatario) e 2
+(liste `to_recipients` e `cc_recipients`). Il limite è 10 indirizzi complessivi;
+indirizzi duplicati, header injection e BCC vengono rifiutati prima dell'invio.
+`mail()` riceve tutti i To nel primo argomento e i CC nell'header `Cc`, usato
+anche per la consegna dal trasporto PHP. Non vengono create email separate.
+
+Per aggiornare un'installazione che già supporta le email Workspace:
+
+1. Dopo approvazione del rilascio, aggiornare **solo `worker.php`**. Non cambiare
+   `config.php`, segreti, mittente o cron. Il nuovo worker mantiene
+   `activity_email_protocol: 1` e aggiunge `activity_email_protocols: [1, 2]` sia
+   alle capability sia alle richieste di claim: può quindi lavorare con il
+   backend precedente senza consumare code incompatibili.
+2. Verificare soltanto con il `GET` autenticato
+   `?action=activity_email_capabilities`: deve dichiarare `[1, 2]` e
+   `queue_enabled: true`. Questo controllo non preleva né invia messaggi.
+3. Applicare la migrazione destinatari v2, quindi pubblicare il backend e la UI.
+   Il backend richiede capability 2 per confermare/accodare le proposte v2 e usa
+   `workspace_claim_email_v2` esclusivamente per consumer compatibili. La vecchia
+   RPC resta vincolata alle righe protocollo 1. Una mail v2 non può essere
+   prelevata da un vecchio worker e inviata soltanto al primo destinatario.
+4. L'eventuale verifica reale richiede un messaggio e destinatari esplicitamente
+   approvati. Non usare `action=test`, POST o cron come test di sola readiness.
+
+`accepted` significa presa in carico dal trasporto, non conferma di consegna
+nelle caselle. Esiti ambigui o acknowledgements persi restano `uncertain` e non
+vengono ripetuti automaticamente. Anche l'accettazione SMTP parziale dei
+To/CC è `uncertain`, per evitare duplicati ai destinatari già accettati.
+
+Test locali senza configurazione, rete né invii reali:
+
+```sh
+php -l hosting/aruba-order-email/worker.php
+php hosting/aruba-order-email/worker.test.php
+node --test server/email/activity-email-worker.test.js server/email/smtp-client.test.js server/email/email-transport-gate.test.js test/order-email-worker.test.mjs
+```

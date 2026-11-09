@@ -1,12 +1,13 @@
+import {emailRecipientSchema, emailRecipientAlternatives} from '../email/email-recipients.js';
 import { objectSchema, uuidSchema } from './schema.js';
 import { canReadModule } from '../ai/operational-read.js';
 import { getActivityEmailContext, listActivityEmails, proposeActivityEmail, getActivityEmail } from '../email/activity-email-service.js';
 
-const inputSchema = objectSchema({
-  taskId: uuidSchema, recipient: { type: 'string', format: 'email', maxLength: 254 },
+const inputSchema = {...objectSchema({
+  taskId: uuidSchema, ...emailRecipientSchema,
   subject: { type: 'string', minLength: 1, maxLength: 200 }, body: { type: 'string', minLength: 1, maxLength: 12000 },
   idempotencyKey: uuidSchema,
-}, ['taskId', 'recipient', 'subject', 'body', 'idempotencyKey']);
+}, ['taskId', 'subject', 'body', 'idempotencyKey']), oneOf: emailRecipientAlternatives};
 const read = (description, schema, execute) => ({ description, inputSchema: schema, effect: 'read', execute });
 export function activityEmailTools(auth) {
   if (!canReadModule(auth, ['attivita'])) return {};
@@ -17,7 +18,7 @@ export function activityEmailTools(auth) {
   };
   const canWrite = auth.profile?.ruoli?.amministratore_workspace === true || ['scrittura', 'amministrazione'].includes(auth.access?.module_levels?.attivita);
   if (canWrite && ['bozza', 'conferma'].includes(auth.capabilities?.role_ai_level)) tools.ACTIVITY_EMAIL_PROPOSE = {
-    description: 'Prepara una email per una attività accessibile, con un destinatario verificato, oggetto e testo. Richiede richiesta esplicita dell’utente, permesso email specifico e conferma umana separata BRAIN_REVIEW kind=email. Non invia. Conserva idempotencyKey nei tentativi e leggi lo stato dopo un esito incerto. Non autorizza invii ricorrenti.',
+    description: 'Prepara una email per una attività accessibile, con destinatari To/CC verificati (massimo 10 totali), oggetto e testo. Richiede richiesta esplicita dell’utente, permesso email specifico e conferma umana separata BRAIN_REVIEW kind=email. Non invia. Conserva idempotencyKey nei tentativi e leggi lo stato dopo un esito incerto. Non autorizza invii ricorrenti.',
     inputSchema, effect: 'propose', execute: async input => ({ email: await proposeActivityEmail(auth, input, { viaAI: true }), requiresConfirmation: true, reviewKind: 'email', sent: false }),
   };
   return tools;

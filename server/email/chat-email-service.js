@@ -1,4 +1,5 @@
-const EMAIL_COLUMNS = 'id,source_kind,task_id,author_id,confirmed_by,recipient,subject,body,via_ai,status,idempotency_key,payload_hash,created_at,confirmed_at,claimed_at,accepted_at,provider_message_id,error_code,delegation_id,delegation_policy_hash,delegation_policy_version';
+import {normalizeEmailRecipients} from './email-recipients.js';
+const EMAIL_COLUMNS = 'id,source_kind,task_id,author_id,confirmed_by,recipient,to_recipients,cc_recipients,transport_protocol_version,subject,body,via_ai,status,idempotency_key,payload_hash,created_at,confirmed_at,claimed_at,accepted_at,provider_message_id,error_code,delegation_id,delegation_policy_hash,delegation_policy_version';
 const DELEGATION_COLUMNS = 'id,author_id,policy_version,policy,policy_hash,status,created_at,approved_by,approved_at,revoked_by,revoked_at,approval_method';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const BUSINESS_ERRORS = new Set(['EMAIL_PERMISSION_REQUIRED','AI_EMAIL_PERMISSION_REQUIRED','EMAIL_NOT_ACCESSIBLE','EMAIL_CHANGED','EMAIL_PROPOSAL_EXPIRED','IDEMPOTENCY_CONFLICT','EMAIL_DELEGATION_REQUIRED','EMAIL_DELEGATION_CHANGED','FORBIDDEN']);
@@ -20,13 +21,13 @@ export async function getChatEmailCapability(auth) {
 }
 export async function prepareChatEmail(auth,input) {
  assert(input && typeof input==='object' && !Array.isArray(input),'Proposta non valida.');
- assert(Object.keys(input).every(key=>['recipient','subject','body','idempotencyKey'].includes(key)),'Campi email non supportati.');
- const {recipient,subject,body,idempotencyKey}=input;
- assert(typeof recipient==='string' && recipient.length<=254 && /^[^\s<>;,"@]+@[^\s<>;,"@]+\.[^\s<>;,"@]+$/.test(recipient),'Indicare un solo indirizzo email.');
+ assert(Object.keys(input).every(key=>['recipient','to','cc','subject','body','idempotencyKey'].includes(key)),'Campi email non supportati.');
+ const {subject,body,idempotencyKey}=input;
+ const recipients=normalizeEmailRecipients(input);
  assert(typeof subject==='string' && subject.trim().length>0 && subject.length<=200 && ![...subject].some(char=>char.charCodeAt(0)<32||char.charCodeAt(0)===127),'Oggetto non valido (massimo 200 caratteri).');
  assert(typeof body==='string' && body.trim().length>0 && body.length<=12000 && !body.includes(String.fromCharCode(0)),'Testo non valido (massimo 12000 caratteri).');
  assert(typeof idempotencyKey==='string' && /^[A-Za-z0-9:_-]{8,128}$/.test(idempotencyKey),'Chiave richiesta non valida.');
- return checked(await auth.scoped.rpc('workspace_prepare_chat_email',{p_recipient:recipient,p_subject:subject,p_body:body,p_idempotency_key:idempotencyKey}));
+ return checked(await auth.scoped.rpc(recipients.protocol===2?'workspace_prepare_chat_email_v2':'workspace_prepare_chat_email',{...(recipients.protocol===2?{p_to:recipients.to,p_cc:recipients.cc}:{p_recipient:recipients.recipient}),p_subject:subject,p_body:body,p_idempotency_key:idempotencyKey}));
 }
 export async function sendChatEmail(auth,{id,expectedHash}) {
  // This function has no human-confirmation fallback. SQL requires an active,
@@ -45,8 +46,9 @@ export async function listChatEmails(auth,{offset=0}={}) {
   .order('created_at',{ascending:false}).order('id',{ascending:false}).range(offset,offset+20))||[];
  return {emails:rows.slice(0,20),nextOffset:rows.length>20?offset+20:null};
 }
-export async function proposeChatEmailDelegation(auth) {
- return checked(await auth.scoped.rpc('workspace_propose_email_delegation'));
+export async function proposeChatEmailDelegation(auth,{policyVersion='chat-email-v1'}={}) {
+ assert(['chat-email-v1','chat-email-v2'].includes(policyVersion),'Versione delega non valida.');
+ return checked(await auth.scoped.rpc(policyVersion==='chat-email-v2'?'workspace_propose_email_delegation_v2':'workspace_propose_email_delegation'));
 }
 export async function getChatEmailDelegation(auth,id) {
  const row=checked(await auth.scoped.from('workspace_email_delegations').select(DELEGATION_COLUMNS).eq('id',uuid(id)).eq('author_id',actor(auth)).maybeSingle());

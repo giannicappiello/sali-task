@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {getActivityEmailTransport,triggerActivityEmailWorker} from './activity-email-worker.js';
+import {getActivityEmailTransport,requireActivityEmailTransport,triggerActivityEmailWorker} from './activity-email-worker.js';
 import {chatEmailTools} from '../second-brain/chat-email-tools.js';
 import {handleSecondBrain,createReceipt} from '../second-brain/handler.js';
-import {activityEmailRequest} from './activity-email-handler.js';
+import {activityEmailRequest,dispatchActivityEmailSafely,scheduleActivityEmailDispatch} from './activity-email-handler.js';
 const id='11111111-1111-4111-8111-111111111111', hash='a'.repeat(64),key='unit-test';
 const auth={profile:{id},capabilities:{internal_data:true,role_ai_level:'conferma'}};
 const environment={ARUBA_EMAIL_WORKER_URL:'https://example.invalid/worker.php',ARUBA_EMAIL_WORKER_SECRET:'unit-test'};
@@ -63,7 +63,54 @@ for(const status of unavailable){
  });
 }
 test('unexpected readiness errors fail closed and never leak diagnostics',async()=>{
- const tools=chatEmailTools(auth,{transport:async()=>{throw Error('private value');},service:{getChatEmailCapability:async()=>({canSend:true}),sendChatEmail:never},schedule:never});
+ const tools=chatEmailTools(auth,{transport:async()=>{throw Error('private value');},service:{getChatEmailCapability:async()=>({canSend:true}),getChatEmail:async()=>row,sendChatEmail:never},schedule:never});
  const capability=await tools.WORKSPACE_EMAIL_CAPABILITY.execute({});assert.equal(capability.canSend,false);assert.equal(capability.transport.status,'unavailable');
  await assert.rejects(tools.WORKSPACE_EMAIL_SEND.execute({id,expectedHash:hash}),e=>e.code==='EMAIL_TRANSPORT_NOT_READY'&&!e.message.includes('private value'));
+});
+
+test('v2 readiness rejects legacy transport without ever dispatching a POST',async()=>{
+ for(const capability of [{activity_email_protocol:1,queue_enabled:true},{activity_email_protocol:2,queue_enabled:true},{activity_email_protocol:1,activity_email_protocols:[1,2],queue_enabled:true}]){
+  const methods=[];const options={environment,requiredProtocol:2,fetchImpl:async(_url,request)=>{
+   methods.push(request.method);return Response.json(request.method==='GET'?capability:{status:'ok',results:[]});
+  }};
+  const supported=capability.activity_email_protocol===2||capability.activity_email_protocols?.includes(2);
+  assert.deepEqual(await getActivityEmailTransport(options),supported?{ready:true,status:'ready'}:{ready:false,status:'unsupported'});
+  await triggerActivityEmailWorker(options);
+  assert.equal(methods.includes('POST'),!!supported);
+ }
+});
+test('require readiness forwards the required protocol and fails closed',async()=>{
+ await assert.rejects(requireActivityEmailTransport(async options=>{
+  assert.equal(options.requiredProtocol,2);return {ready:false,status:'unsupported'};
+ },{requiredProtocol:2}),error=>error.code==='EMAIL_TRANSPORT_NOT_READY');
+});
+
+test('post-queue wake-up preserves the row protocol and never POSTs v2 to a downgraded worker',async()=>{
+ for(const [version,capability,shouldPost] of [
+  [undefined,{activity_email_protocol:1,queue_enabled:true},true],
+  [1,{activity_email_protocol:1,queue_enabled:true},true],
+  [2,{activity_email_protocol:1,queue_enabled:true},false],
+  [2,{activity_email_protocol:1,activity_email_protocols:[1,2],queue_enabled:true},true],
+ ]){
+  const methods=[];const email={id,status:'queued',transport_protocol_version:version};
+  const before=JSON.stringify(email);
+  const dispatch=options=>{
+   assert.equal(options.requiredProtocol,version||1);
+   return triggerActivityEmailWorker({...options,environment,fetchImpl:async(_url,request)=>{
+    methods.push(request.method);return Response.json(request.method==='GET'?capability:{status:'ok',results:[]});
+   }});
+  };
+  const result=await dispatchActivityEmailSafely(email,dispatch);
+  assert.equal(result.status,shouldPost?'ok':'unsupported');
+  assert.equal(methods.includes('POST'),shouldPost);
+  assert.equal(JSON.stringify(email),before,'wake-up must not mutate or requeue the message');
+ }
+});
+test('scheduled wake-up forwards protocol2 and terminal messages do not dispatch',async()=>{
+ const scheduled=[];let calls=0;
+ const dispatch=async options=>{calls++;assert.deepEqual(options,{requiredProtocol:2});return {status:'ok'};};
+ assert.deepEqual(scheduleActivityEmailDispatch({status:'queued',transport_protocol_version:2},{dispatch,schedule:work=>scheduled.push(work)}),{status:'scheduled'});
+ await Promise.all(scheduled);assert.equal(calls,1);
+ for(const status of ['accepted','uncertain','failed']) assert.equal(scheduleActivityEmailDispatch({status,transport_protocol_version:2},{dispatch,schedule:never}),undefined);
+ assert.equal(calls,1);
 });

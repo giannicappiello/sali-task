@@ -27,3 +27,12 @@ test('chat reads constrain source and author, hide worker tokens, not-found is 4
  await assert.rejects(getChatEmail({profile:{id},scoped:{from:()=>q}},other),e=>e.status===404);
  assert.deepEqual(filters,[['id',other],['source_kind','chat'],['author_id',id]]);
 });
+
+test('To and CC use a separate v2 RPC with canonical complete recipients', async()=>{
+ const calls=[];const auth={scoped:{rpc:async(...args)=>{calls.push(args);return {data:{id}};}}};
+ const multi={to:[' One@Example.Test ','two@example.test'],cc:['COPY@example.test'],subject:'Subject',body:'Body',idempotencyKey:'request_multi'};
+ await prepareChatEmail(auth,multi);
+ assert.deepEqual(calls[0],['workspace_prepare_chat_email_v2',{p_to:['one@example.test','two@example.test'],p_cc:['copy@example.test'],p_subject:'Subject',p_body:'Body',p_idempotency_key:'request_multi'}]);
+ for(const bad of [{recipient:'one@example.test'},{to:[]},{cc:'copy@example.test'},{cc:['ONE@example.test']},{to:['one@example.test','ONE@example.test']},{to:['one@example.test\r\n']},{to:Array.from({length:11},(_,i)=>`user${i}@example.test`)},{bcc:[]}]) await assert.rejects(prepareChatEmail(auth,{...multi,...bad}));
+ assert.equal(calls.length,1);
+});

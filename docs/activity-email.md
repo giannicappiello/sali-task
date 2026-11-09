@@ -6,9 +6,9 @@ Questa versione e stata sostituita dal flusso chat-first descritto in [chat-emai
 
 ## Ambito
 
-Email singola da una task v4 esistente: un destinatario, oggetto fino a 200 caratteri e testo fino a 12000. Nessun allegato, lettura casella, invio ricorrente o cambio del mittente in questa versione.
+Il form del prototipo, non collegato alla UI, prepara email da una task v4 esistente con un destinatario, oggetto fino a 200 caratteri e testo fino a 12000. Non e il percorso per gli invii chat multi-destinatario. Nessun allegato, lettura casella, invio ricorrente o cambio del mittente in questa versione.
 
-Nel dettaglio attivita, il pannello **Email dell'attivita** permette di preparare una proposta, leggere il riepilogo completo e premere **Conferma e invia**. Preparare una proposta non manda email. Lo storico e accessibile solo nel perimetro attuale della task.
+Il componente storico **Email dell'attivita**, conservato ma non montato nel dettaglio attivita, permette di preparare una proposta, leggere il riepilogo completo e premere **Conferma e invia**. Preparare una proposta non manda email. Lo storico e accessibile solo nel perimetro attuale della task.
 
 ## Autorizzazione e consenso
 
@@ -23,7 +23,7 @@ Nel dettaglio attivita, il pannello **Email dell'attivita** permette di preparar
 ## Progre AI
 
 Nuovi strumenti: `ACTIVITY_EMAIL_CONTEXT`, `ACTIVITY_EMAIL_PROPOSE`, `ACTIVITY_EMAIL_HISTORY`, `ACTIVITY_EMAIL_STATUS`.
-`ACTIVITY_EMAIL_PROPOSE` restituisce la proposta e `reviewKind=email`. Il passaggio successivo e `BRAIN_REVIEW` con `kind=email` e il relativo ID. Il titolare verifica destinatario, oggetto e testo e conferma personalmente in Workspace. `BRAIN_ACTION_STATUS` supporta anche `kind=email`.
+`ACTIVITY_EMAIL_PROPOSE` restituisce la proposta e `reviewKind=email`. Il passaggio successivo e `BRAIN_REVIEW` con `kind=email` e il relativo ID. Il titolare verifica tutti i destinatari To/CC, oggetto e testo e conferma personalmente in Workspace. Il riepilogo esistente legge `to_recipients` e `cc_recipients` senza troncamenti; per gli storici con array null usa `recipient`. Nessuna modifica del messaggio o della receipt avviene nel browser. `BRAIN_ACTION_STATUS` supporta anche `kind=email`.
 
 Dopo pubblicazione aggiornare il catalogo delle azioni della connessione esistente se il client non mostra i nuovi strumenti. Non cambiare i permessi Workspace per risolvere un catalogo obsoleto.
 
@@ -34,11 +34,13 @@ Una proposta rifiutata diventa `rejected`. `accepted` prova soltanto l'accettazi
 
 Il claim e unico. Non torna mai automaticamente a queued. Una risposta SMTP ambigua, la perdita della risposta al claim o il mancato salvataggio dell'esito richiedono verifica; i claim scaduti passano a uncertain. Nessun pulsante di retry automatico.
 
-Il trasporto riutilizza Aruba PHP o il worker SMTP esistente. Il protocollo HTTP `activity_email_protocol=1` e il prefisso `activity:` isolano le nuove email da ordini, DDT e report commerciali. `run_activity` elabora esclusivamente attivita.
+Il trasporto riutilizza Aruba PHP o il worker SMTP esistente. Il protocollo HTTP conserva `activity_email_protocol=1` per le righe legacy e aggiunge protocollo 2 per le liste To/CC. Le righe legacy non vengono riscritte; hash e receipt storici restano invariati. La capability del worker deve coprire il protocollo della proposta prima di accodarla. Il prefisso `activity:` isola le nuove email da ordini, DDT e report commerciali. `run_activity` elabora esclusivamente la coda email Workspace (chat e attivita), non ordini, DDT o report.
 
 La conferma ritorna lo stato persistito subito; il risveglio del worker viene gestito con Vercel `waitUntil`. Il dispatcher controlla prima con GET `activity_email_capabilities`: un worker vecchio o sospeso non riceve il nuovo POST. Le configurazioni e i segreti esistenti restano sul server.
 
-## Rilascio, da autorizzare separatamente
+## Rilascio storico, da autorizzare separatamente
+
+Per il rilascio corrente To/CC e le deleghe v1/v2 seguire [chat-email.md](chat-email.md). Non riattivare il pannello task per rendere disponibili gli invii dalla chat.
 
 1. Rivedere e applicare `supabase/migrations/20261108123140_activity_email.sql` nell'ambiente scelto. La migrazione include RLS, grant minimi, trigger di immutabilita e funzioni worker service-only.
 2. Pubblicare backend e frontend della stessa revisione.

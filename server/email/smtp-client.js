@@ -1,4 +1,5 @@
 import nodemailer from "nodemailer";
+import { normalizeEmailRecipients } from "./email-recipients.js";
 
 function runtimeEnv(name) {
   if (globalThis.Deno?.env?.get) return globalThis.Deno.env.get(name);
@@ -42,6 +43,20 @@ export function smtpSettings(getEnv = runtimeEnv) {
   };
 }
 
+// Validate before the SMTP handoff. Reject duplicates rather than silently
+// moving a recipient from CC to To or altering an approved payload.
+export function normalizeTransportRecipients(to, cc = []) {
+  try {
+    if (typeof to === 'string' && Array.isArray(cc) && cc.length === 0) {
+      return {to:[normalizeEmailRecipients({recipient:to}).recipient], cc:[]};
+    }
+    const recipients = normalizeEmailRecipients({to:typeof to === 'string' ? [to] : to, cc});
+    return {to:recipients.to, cc:recipients.cc};
+  } catch {
+    throw Object.assign(new Error('Destinatari email non validi.'), {code:'EENVELOPE'});
+  }
+}
+
 export function createSmtpClient({
   getEnv = runtimeEnv,
   createTransport = nodemailer.createTransport.bind(nodemailer),
@@ -65,13 +80,20 @@ export function createSmtpClient({
   });
 
   return {
-    async send({ to, subject, text, html, attachments = [] }) {
+    async send({ to, cc = [], bcc, subject, text, html, attachments = [] }) {
+      if (bcc !== undefined) throw Object.assign(new Error('BCC non supportato.'), {code:'EENVELOPE'});
+      const recipients = normalizeTransportRecipients(to, cc);
+      if (typeof subject !== 'string' || /[\r\n]/.test(subject)) {
+        throw Object.assign(new Error('Oggetto email non valido.'), {code:'EENVELOPE'});
+      }
       const result = await transport.sendMail({
         from: {
           name: settings.fromName,
           address: settings.fromEmail,
         },
-        to,
+        to: typeof to === 'string' ? recipients.to[0] : recipients.to,
+        ...(recipients.cc.length ? {cc:recipients.cc} : {}),
+        envelope: {from:settings.fromEmail, to:[...recipients.to, ...recipients.cc]},
         subject,
         text,
         html,
@@ -79,10 +101,21 @@ export function createSmtpClient({
       });
       const accepted = result?.accepted || [];
       const rejected = result?.rejected || [];
-      if (!accepted.length || rejected.length) {
-        const error = new Error("Il server SMTP ha rifiutato il destinatario.");
-        error.code = "EENVELOPE";
-        error.response = result?.response;
+      const acceptedAddresses = new Set(accepted.map(value => String(value).trim().toLowerCase()));
+      const requested = [...recipients.to, ...recipients.cc];
+      // Nodemailer canonicalizes its actual envelope (for example an IDN
+      // domain to punycode). Comparing accepted recipients with the original
+      // string would turn successful legacy sends into false partial failures.
+      // Older/custom transports may omit envelope; retain single-recipient
+      // compatibility in that case, while v2 still checks every requested To/CC.
+      const expected = Array.isArray(result?.envelope?.to) ? result.envelope.to
+        : typeof to === 'string' && recipients.cc.length === 0 ? accepted : requested;
+      if (!accepted.length || rejected.length || expected.length !== requested.length
+          || expected.some(value => !acceptedAddresses.has(String(value).trim().toLowerCase()))) {
+        // Nodemailer can hand DATA to accepted recipients even if other RCPTs
+        // were rejected. Partial acceptance must never look safe to resend.
+        const error = new Error('Accettazione SMTP incompleta.');
+        error.code = accepted.length ? 'EPARTIALDELIVERY' : rejected.length ? 'EENVELOPE' : 'EDELIVERYUNCERTAIN';
         throw error;
       }
       return {
@@ -97,6 +130,7 @@ export function createSmtpClient({
 }
 
 export function isPermanentSmtpError(error) {
+  if (['EPARTIALDELIVERY','EDELIVERYUNCERTAIN'].includes(error?.code)) return false;
   const responseCode = Number(error?.responseCode);
   return error?.code === "EAUTH"
     || error?.code === "EENVELOPE"

@@ -77,7 +77,8 @@ foreach (['success', 'rejected', 'ambiguous', 'lost_ack'] as $scenario) {
     verify($result['status'] === $expected, 'wrong activity outcome: ' . $scenario);
     verify(count($GLOBALS['sent']) === 1, 'activity sent repeatedly');
     verify($GLOBALS['calls'][0]['activity_only'] === true, 'activity-only missing');
-    verify($GLOBALS['calls'][0]['activity_email_protocol'] === 1, 'protocol missing');
+    verify($GLOBALS['calls'][0]['activity_email_protocol'] === 1, 'legacy-compatible protocol missing');
+    verify($GLOBALS['calls'][0]['activity_email_protocols'] === [1, 2], 'v2 support missing');
     verify(end($GLOBALS['calls'])['action'] === $expected, 'wrong acknowledgement');
     verify(!str_contains($GLOBALS['sent'][0]['body'], 'Content-Disposition: attachment'), 'unexpected attachment');
     verify(!str_contains(json_encode($GLOBALS['calls']), 'Private body'), 'body leaked to diagnostics');
@@ -94,3 +95,63 @@ try {
     verify($error->getMessage() === 'Worker activity protocol mismatch.', 'wrong mismatch error');
 }
 verify(count($GLOBALS['sent']) === 0, 'activity-only sent a legacy job');
+
+
+// New workers must send all recipients once, including Cc, while keeping
+// acknowledgements terminal after provider errors or lost backend responses.
+$multiClaim = ['status'=>'claimed', 'activity_email_protocol'=>2, 'worker_id'=>'worker', 'email'=>[
+    'id'=>'activity:11111111-1111-4111-8111-111111111111', 'lock_token'=>'22222222-2222-4222-8222-222222222222',
+    'destinatario'=>'first@example.test', 'to_recipients'=>['first@example.test','second@example.test'],
+    'cc_recipients'=>['copy@example.test'], 'oggetto'=>'Private', 'corpo'=>'Private body',
+], 'attachments'=>[]];
+foreach (['success', 'rejected', 'ambiguous', 'lost_ack'] as $scenario) {
+    $GLOBALS['claim'] = $multiClaim;
+    $GLOBALS['send_reject'] = $scenario === 'rejected';
+    $GLOBALS['send_throw'] = $scenario === 'ambiguous';
+    $GLOBALS['fail_ack'] = $scenario === 'lost_ack';
+    $GLOBALS['calls'] = $GLOBALS['sent'] = [];
+    $result = processOne($config, false, true);
+    $expected = $scenario === 'success' ? 'accepted' : ($scenario === 'rejected' ? 'failed' : 'uncertain');
+    verify($result['status'] === $expected, 'wrong v2 outcome: ' . $scenario);
+    verify(count($GLOBALS['sent']) === 1, 'v2 sent repeatedly');
+    verify($GLOBALS['sent'][0]['to'] === 'first@example.test, second@example.test', 'To recipients missing');
+    verify(str_contains($GLOBALS['sent'][0]['headers'], "Cc: copy@example.test"), 'Cc header missing');
+    verify(!str_contains($GLOBALS['sent'][0]['headers'], 'Bcc:'), 'unexpected Bcc');
+    verify(!str_contains($GLOBALS['sent'][0]['to'], 'copy@example.test'), 'Cc must not become To');
+    verify(end($GLOBALS['calls'])['activity_email_protocol'] === 2, 'wrong acknowledgement protocol');
+    verify(end($GLOBALS['calls'])['action'] === $expected, 'wrong v2 acknowledgement');
+    verify(!str_contains(json_encode($GLOBALS['calls']), 'Private body'), 'private content leaked');
+}
+
+$GLOBALS['send_reject'] = $GLOBALS['send_throw'] = $GLOBALS['fail_ack'] = false;
+foreach ([
+    ['to_recipients'=>[]], ['to_recipients'=>null], ['cc_recipients'=>null],
+    ['to_recipients'=>["first@example.test\r\nBcc:evil@example.test"]],
+    ['cc_recipients'=>["copy@example.test\n"]],
+    ['cc_recipients'=>['FIRST@example.test']],
+    ['to_recipients'=>['first@example.test,second@example.test']],
+    ['to_recipients'=>array_map(static fn(int $i): string => "user{$i}@example.test", range(1, 11)), 'cc_recipients'=>[]],
+    ['bcc'=>['hidden@example.test']], ['bcc_recipients'=>['hidden@example.test']],
+] as $changed) {
+    $GLOBALS['claim'] = $multiClaim;
+    $GLOBALS['claim']['email'] = array_merge($multiClaim['email'], $changed);
+    $GLOBALS['calls'] = $GLOBALS['sent'] = [];
+    $result = processOne($config, false, true);
+    verify($result['status'] === 'failed', 'malformed recipients accepted');
+    verify(count($GLOBALS['sent']) === 0, 'malformed recipients handed to provider');
+    verify(end($GLOBALS['calls'])['action'] === 'failed', 'malformed payload not terminal');
+}
+foreach ([1, 3] as $protocol) {
+    $GLOBALS['claim'] = $multiClaim;
+    $GLOBALS['claim']['activity_email_protocol'] = $protocol;
+    $GLOBALS['calls'] = $GLOBALS['sent'] = [];
+    $result = processOne($config, false, true);
+    verify($result['status'] === 'failed', 'unsupported payload accepted');
+    verify(count($GLOBALS['sent']) === 0, 'unsupported payload partially sent');
+}
+
+$legacy = buildMail($config, 'Legacy@example.test', 'Old single', 'Body', []);
+verify($legacy['to'] === 'Legacy@example.test', 'legacy address changed');
+verify(!str_contains($legacy['headers'], 'Cc:'), 'legacy has unexpected Cc');
+verify(str_contains($source, "'activity_email_protocol' => 1, 'activity_email_protocols' => [1, 2]"), 'update-first capability missing');
+echo "PASS: v2 To/Cc, legacy compatibility, invalid and duplicate recipients, no Bcc, lost-ack safety.\n";

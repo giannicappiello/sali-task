@@ -7,6 +7,7 @@ export function dataCoverageTool(tools) {
    authorization:'Catalogo personale, non attestazione di accesso ai record. RLS, schermate, ruoli e perimetro AI sono verificati dai servizi a ogni chiamata. Nessuna modifica dei permessi.',
    reads:Object.entries(tools).filter(([,t])=>(t.effect||'read')==='read').map(([name,t])=>({name,description:t.description,filters:plainSchema(t).properties||{}})),
    limitations:[
+    {area:'Rubrica Workspace',tool:'WORKSPACE_CONTACTS_SEARCH',coverage:'Solo id, nome, email del profilo e stato; JWT personale, RLS utenti e workspace_data_scope. Richiede modulo Messaggi nel perimetro AI. Paginare; omonimi da risolvere esplicitamente. Non garantisce accesso a tutti gli utenti; nessun dato HR, auth.users, permesso aggiunto o invio.'},
     {area:'Consuntivi produzioni',tool:'PRODUCTION_CONSUNTIVI_READ',coverage:'Archivio importato Workspace, produzioni concluse e stessi calcoli della schermata. Nessun aggiornamento MES, recupero OC o fatture. Ambiti propri/team bloccati finché manca un filtro ufficiale; cliente filtrato dal servizio.'},
     {area:'MES',tool:'MES_READ',coverage:'Solo risorse e filtri del contratto pubblico. Non è accesso generale al database MES. Alcune letture di dominio restano subordinate ai permessi operativi esistenti.'},
     {area:'Workspace',tool:'WORKSPACE_SEARCH / BUSINESS_SEARCH',coverage:'Proiezioni esplicite paginabili di prodotti, metadati documenti, progetti, task e riferimenti CRM; non contenuto integrale o allegati.'},

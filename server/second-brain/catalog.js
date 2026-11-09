@@ -1,5 +1,6 @@
 import { addActivityStatus } from './activity-status.js';
 import { chatEmailTools } from './chat-email-tools.js';
+import { workspaceContactTools } from './workspace-contacts.js';
 import { getChatEmail, getChatEmailDelegation } from '../email/chat-email-service.js';
 import { getActivityEmail } from '../email/activity-email-service.js';
 import {readArchivedDdtPdfs} from '../ai/ddt-archive-refresh.js';
@@ -54,7 +55,7 @@ const datasets = {
 export function createBrainCatalog(auth) {
   const controlled = availableControlledActions(auth);
   const tools = { ...workspaceReadTools(auth), ...operationalReadTools(auth), ...workspaceCostReadTools(auth), ...mexalFinanceTools(auth), ...mexalArchiveTools(auth), ...mexalCashflowTools(auth), ...mexalBankBalanceTools(auth),
-    ...mexalIncomeStatementTools(auth), ...mexalInventoryTools(auth), ...mexalMarginSourceTools(auth), ...marginReportTools(auth), ...productionEmergencyTools(auth), ...commercialReportTools(auth), ...chatEmailTools(auth),
+    ...mexalIncomeStatementTools(auth), ...mexalInventoryTools(auth), ...mexalMarginSourceTools(auth), ...marginReportTools(auth), ...productionEmergencyTools(auth), ...commercialReportTools(auth), ...chatEmailTools(auth), ...workspaceContactTools(auth),
     ...recoveryTools(auth, Boolean(controlled.MES_PLAN_APPLY)), ...memoryTools(auth), ...activityTools(auth), ...businessReadTools(auth), ...commerceReadTools(auth),
     ...rdpCreationTools(auth, Boolean(controlled.RDP_CREATE)),
     ...(controlled.FORMULA_CREATE_REVISION ? formulaReadTools(auth) : {}),

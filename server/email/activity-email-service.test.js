@@ -37,3 +37,14 @@ test('schema boundaries: no role grants, separate private attempts, RLS and irre
  assert.match(migration,/status='uncertain',error_code='CLAIM_TIMEOUT'/);
  assert.doesNotMatch(migration,/grant.*workspace_claim_email.*to authenticated/);
 });
+
+test('activity supports To/CC arrays without losing roles and rejects ambiguous legacy input',async()=>{
+ const calls=[];const auth={scoped:{rpc:async(...args)=>{calls.push(args);return {data:{id}};}}};
+ const multi={taskId:id,to:['ONE@example.test','two@example.test'],cc:['copy@example.test'],subject:'S',body:'B',idempotencyKey:'request_multi'};
+ await proposeActivityEmail(auth,multi,{viaAI:true});
+ assert.equal(calls[0][0],'workspace_propose_activity_email_v2');
+ assert.deepEqual(calls[0][1].p_to,['one@example.test','two@example.test']);assert.deepEqual(calls[0][1].p_cc,['copy@example.test']);
+ assert.equal(calls[0][1].p_via_ai,true);
+ await assert.rejects(proposeActivityEmail(auth,{...multi,recipient:'one@example.test'}));
+ await assert.rejects(proposeActivityEmail(auth,{...multi,cc:['one@example.test']}));assert.equal(calls.length,1);
+});

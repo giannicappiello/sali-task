@@ -101,8 +101,37 @@ function encodeHeader(string $value): string
     return '=?UTF-8?B?' . base64_encode(safeHeader($value)) . '?=';
 }
 
-function buildMail(array $config, string $to, string $subject, string $body, array $attachments): array
+// Bare mailboxes only. Validate before trimming so CRLF cannot be hidden.
+function mailRecipients(string|array $to, array $cc = []): array
 {
+    $to = is_string($to) ? [$to] : $to;
+    if (!array_is_list($to) || !array_is_list($cc) || count($to) === 0 || count($to) + count($cc) > 10) {
+        throw new RuntimeException('Invalid email recipients.');
+    }
+    $seen = [];
+    $normalize = static function (array $addresses) use (&$seen): array {
+        $result = [];
+        foreach ($addresses as $address) {
+            if (!is_string($address) || preg_match('/[\x00-\x1f\x7f]/', $address)) {
+                throw new RuntimeException('Invalid email recipients.');
+            }
+            $address = trim($address);
+            $key = strtolower($address);
+            if (strlen($address) > 254 || !filter_var($address, FILTER_VALIDATE_EMAIL)
+                || preg_match('/[<>;,\s"]/', $address) || isset($seen[$key])) {
+                throw new RuntimeException('Invalid or duplicate email recipients.');
+            }
+            $seen[$key] = true;
+            $result[] = $address;
+        }
+        return $result;
+    };
+    return ['to' => $normalize($to), 'cc' => $normalize($cc)];
+}
+
+function buildMail(array $config, string|array $to, string $subject, string $body, array $attachments, array $cc = []): array
+{
+    $recipients = mailRecipients($to, $cc);
     $boundary = '=_Progre_' . bin2hex(random_bytes(18));
     $messageId = sprintf('<%s@%s>', bin2hex(random_bytes(16)), substr(strrchr($config['from_email'], '@') ?: '@localhost', 1));
     $headers = [
@@ -113,6 +142,11 @@ function buildMail(array $config, string $to, string $subject, string $body, arr
         'Content-Type: multipart/mixed; boundary="' . $boundary . '"',
         'X-Mailer: Progre Workspace Aruba Worker',
     ];
+    if (count($recipients['cc']) > 0) {
+        // PHP mail() derives envelope recipients from its To argument and Cc
+        // header. Never put Cc addresses into To or add a Bcc header.
+        $headers[] = 'Cc: ' . implode(', ', $recipients['cc']);
+    }
     $parts = [
         '--' . $boundary,
         'Content-Type: text/plain; charset=UTF-8',
@@ -138,7 +172,7 @@ function buildMail(array $config, string $to, string $subject, string $body, arr
     }
     $parts[] = '--' . $boundary . '--';
     return [
-        'to' => safeHeader($to),
+        'to' => implode(', ', $recipients['to']),
         'subject' => encodeHeader($subject),
         'body' => implode("\r\n", $parts),
         'headers' => implode("\r\n", $headers),
@@ -179,13 +213,28 @@ function processActivityClaim(array $config, array $claimed): array
     $attempted = false;
     $accepted = false;
     $definitive = false;
-    $identity = ['activity_email_protocol' => 1, 'email_id' => $email['id'],
+    $protocol = $claimed['activity_email_protocol'] ?? null;
+    $identity = ['activity_email_protocol' => $protocol, 'email_id' => $email['id'],
         'worker_id' => $claimed['worker_id'], 'lock_token' => $email['lock_token']];
     try {
-        if (($claimed['activity_email_protocol'] ?? null) !== 1 || !empty($claimed['attachments'])) {
+        if (!in_array($protocol, [1, 2], true) || !empty($claimed['attachments'])
+            || array_key_exists('bcc', $email) || array_key_exists('bcc_recipients', $email)) {
             throw new RuntimeException('Invalid activity payload.');
         }
-        $mail = buildMail($config, (string)$email['destinatario'], (string)$email['oggetto'], (string)$email['corpo'], []);
+        if ($protocol === 2) {
+            if (!is_array($email['to_recipients'] ?? null) || !is_array($email['cc_recipients'] ?? null)) {
+                throw new RuntimeException('Invalid activity recipients.');
+            }
+            $to = $email['to_recipients'];
+            $cc = $email['cc_recipients'];
+        } else {
+            if (isset($email['to_recipients']) || isset($email['cc_recipients'])) {
+                throw new RuntimeException('Invalid legacy activity recipients.');
+            }
+            $to = (string)($email['destinatario'] ?? '');
+            $cc = [];
+        }
+        $mail = buildMail($config, $to, (string)$email['oggetto'], (string)$email['corpo'], [], $cc);
         $attempted = true;
         if (!sendMessage($mail)) {
             $definitive = true;
@@ -207,7 +256,7 @@ function processActivityClaim(array $config, array $claimed): array
 
 function processOne(array $config, bool $reportsOnly = false, bool $activityOnly = false): array
 {
-    $claimed = apiRequest($config, ['action' => 'claim', 'shipment_protocol' => 1, 'report_protocol' => 1, 'reports_only' => $reportsOnly, 'activity_email_protocol' => 1, 'activity_only' => $activityOnly]);
+    $claimed = apiRequest($config, ['action' => 'claim', 'shipment_protocol' => 1, 'report_protocol' => 1, 'reports_only' => $reportsOnly, 'activity_email_protocol' => 1, 'activity_email_protocols' => [1, 2], 'activity_only' => $activityOnly]);
     if (($claimed['status'] ?? '') === 'idle') {
         return ['status' => 'idle'];
     }
@@ -293,7 +342,8 @@ try {
         : strtolower(trim((string)($_GET['action'] ?? $input['action'] ?? 'run')));
 
     if ($action === 'activity_email_capabilities') {
-        respond(['activity_email_protocol' => 1,
+        // Keep the v1 flag so the worker can be upgraded before the backend.
+        respond(['activity_email_protocol' => 1, 'activity_email_protocols' => [1, 2],
             'queue_enabled' => ($config['queue_enabled'] ?? false) === true]);
     }
 

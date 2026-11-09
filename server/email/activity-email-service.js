@@ -1,4 +1,5 @@
-const PUBLIC_COLUMNS = 'id,source_kind,delegation_id,delegation_policy_hash,delegation_policy_version,task_id,author_id,confirmed_by,recipient,subject,body,via_ai,status,idempotency_key,task_snapshot,payload_hash,created_at,confirmed_at,claimed_at,accepted_at,provider_message_id,error_code';
+import {normalizeEmailRecipients} from './email-recipients.js';
+const PUBLIC_COLUMNS = 'id,source_kind,delegation_id,delegation_policy_hash,delegation_policy_version,task_id,author_id,confirmed_by,recipient,to_recipients,cc_recipients,transport_protocol_version,subject,body,via_ai,status,idempotency_key,task_snapshot,payload_hash,created_at,confirmed_at,claimed_at,accepted_at,provider_message_id,error_code';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function requireValue(condition, message, status = 400) {
   if (!condition) throw Object.assign(new Error(message), { status });
@@ -37,18 +38,18 @@ export async function getActivityEmailContext(auth, {taskId}) {
 }
 export async function proposeActivityEmail(auth, input, {viaAI = false} = {}) {
   requireValue(input && typeof input === 'object' && !Array.isArray(input), 'Proposta non valida.');
-  const allowed = ['taskId', 'recipient', 'subject', 'body', 'idempotencyKey'];
+  const allowed = ['taskId', 'recipient', 'to', 'cc', 'subject', 'body', 'idempotencyKey'];
   requireValue(Object.keys(input).every(key => allowed.includes(key)), 'Campi email non supportati.');
-  const {taskId, recipient, subject, body, idempotencyKey} = input;
+  const {taskId, subject, body, idempotencyKey} = input;
+  const recipients = normalizeEmailRecipients(input);
   uuid(taskId);
-  requireValue(typeof recipient === 'string' && recipient.length <= 254 && /^[^\s<>;,"@]+@[^\s<>;,"@]+\.[^\s<>;,"@]+$/.test(recipient), 'Indicare un solo indirizzo email.');
   requireValue(typeof subject === 'string' && subject.trim().length > 0 && subject.length <= 200 && ![...subject].some(char => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127), 'Oggetto non valido (massimo 200 caratteri).');
   requireValue(typeof body === 'string' && body.trim().length > 0 && body.length <= 12000 && !body.includes(String.fromCharCode(0)), 'Testo non valido (massimo 12000 caratteri).');
   requireValue(typeof idempotencyKey === 'string' && /^[A-Za-z0-9:_-]{8,128}$/.test(idempotencyKey), 'Chiave richiesta non valida.');
   // viaAI is an internal option, never copied from request input. SQL re-reads
   // capabilities, including on confirmation, rather than trusting auth's cache.
-  return checked(await auth.scoped.rpc('workspace_propose_activity_email', {
-    p_task: taskId, p_recipient: recipient, p_subject: subject, p_body: body,
+  return checked(await auth.scoped.rpc(recipients.protocol === 2 ? 'workspace_propose_activity_email_v2' : 'workspace_propose_activity_email', {
+    p_task: taskId, ...(recipients.protocol === 2 ? {p_to: recipients.to, p_cc: recipients.cc} : {p_recipient: recipients.recipient}), p_subject: subject, p_body: body,
     p_idempotency_key: idempotencyKey, p_via_ai: viaAI === true,
   }));
 }

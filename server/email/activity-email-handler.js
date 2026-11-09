@@ -31,7 +31,7 @@ export async function dispatchActivityEmailSafely(email, dispatch) {
   try {
     const trigger = dispatch || (await import('./activity-email-worker.js')).triggerActivityEmailWorker;
     if (!trigger) return { status: 'not_configured' };
-    return await trigger();
+    return await trigger({ requiredProtocol: email.transport_protocol_version || 1 });
   } catch {
     // The persisted authorization is valid even when wake-up fails. Never enqueue again.
     return { status: 'error', message: 'Email accodata. Avvio del servizio non verificato; consulta lo storico.' };
@@ -77,7 +77,7 @@ export async function activityEmailRequest(req, dependencies = {}) {
   const current = await service.getActivityEmail(auth, receipt.id);
   if (current.author_id !== auth.profile.id || current.via_ai) throw fail('Proposta email non confermabile da questa schermata.', 403);
   if (service.hashActivityEmail(current) !== receipt.hash) throw fail('La proposta email è cambiata. Riapri il riepilogo.', 409);
-  if (body.decision === 'confirm') await requireActivityEmailTransport(dependencies.transport);
+  if (body.decision === 'confirm') await requireActivityEmailTransport(dependencies.transport, { requiredProtocol: current.transport_protocol_version || 1 });
   const email = await service.decideActivityEmail(auth, { id: receipt.id, confirm: body.decision === 'confirm', expectedHash: receipt.hash });
   return { email, dispatch: scheduleActivityEmailDispatch(email, { dispatch: dependencies.dispatch, schedule: dependencies.schedule }), sent: false };
 }

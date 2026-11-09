@@ -49,10 +49,16 @@ La directory messaggi `chat_directory()` ha un perimetro specifico per reparti/c
 
 Il tool compare nel catalogo personale, in `BRAIN_DATA_COVERAGE` e in `BRAIN_STATUS.contactsTools`. La discovery indica solo l'esposizione, non certifica che una lettura sia riuscita. Se il backend lo espone ma il client non lo mostra, aggiornare le azioni della connessione esistente senza cambiare i permessi Workspace.
 
-Non serve una migrazione DB. La verifica locale usa soltanto fixture sintetiche e una richiesta HTTP Supabase simulata. Non legge persone reali, non invia email e non modifica dati remoti. Le prove verificano uso esclusivo del client personale, intersezione RLS simulata/scope, profili inattivi, omonimi, paginazione, escalation, input malevoli e minimizzazione. Una prova in produzione, successiva al rilascio autorizzato, deve usare il JWT dell'utente per verificare la visibilità effettiva e non va sostituita da una query amministrativa sui dati personali.
+È necessaria la migrazione `20261109183337_workspace_contacts_ai_module.sql`: le funzioni AI installate avevano una lista statica che escludeva Messaggi. La migrazione aggiunge solo `messaggi` a `module_base` nelle definizioni correnti di `workspace_ai_capabilities` e `admin_ai_effective_access`, conservando il resto delle funzioni e gli ACL. Non concede accessi a reparti o utenti, non modifica RLS e non introduce tabelle. Gli amministratori mantengono il loro accesso globale già previsto; i non amministratori restano bloccati finché la configurazione AI esistente non consente esplicitamente il modulo. La schermata Impostazioni AI mostra Messaggi per reparto ed eccezioni utente, senza attivarlo automaticamente. Una definizione installata non conforme blocca la migrazione invece di sovrascriverla. La verifica locale usa soltanto fixture sintetiche e una richiesta HTTP Supabase simulata. Non legge persone reali, non invia email e non modifica dati remoti. Le prove verificano uso esclusivo del client personale, intersezione RLS simulata/scope, profili inattivi, omonimi, paginazione, escalation, input malevoli e minimizzazione. Una prova in produzione, successiva al rilascio autorizzato, deve usare il JWT dell'utente per verificare la visibilità effettiva e non va sostituita da una query amministrativa sui dati personali.
 
 Comando mirato:
 
 ```sh
 node --test server/second-brain/workspace-contacts.test.js
+```
+
+Test PostgreSQL locale della configurabilità (fixture sintetica, nessuna connessione remota):
+
+```sh
+PGLITE_MODULE=file:///percorso/pglite/dist/index.js node --test server/second-brain/workspace-contacts-permissions-db.test.js
 ```

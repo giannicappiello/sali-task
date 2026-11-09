@@ -6,6 +6,7 @@ import { createClient } from "@supabase/supabase-js";
 import { loadOrderPdfEmailData } from "../../../server/orders/order-pdf-server.js";
 import { claimShipmentForHttpWorker, updateShipmentEmail } from '../../../server/shipment-email-worker.js';
 import {claimCommercialEmail,commercialWorkerAction} from '../../../server/reports/commercial-worker.js';
+import {claimMarginEmail,marginWorkerAction} from '../../../server/reports/margin-service.js';
 
 const LEASE_SECONDS = 300;
 
@@ -60,6 +61,9 @@ return async function handler(req, res) {
       return res.status(200).json(await activityWorkerAction(supabase,req.body));
     }
 
+    if(String(req.body?.email_id||'').startsWith('report:margin:')) {
+      return res.status(200).json(await marginWorkerAction(supabase,req.body));
+    }
     if(String(req.body?.email_id||'').startsWith('report:')) {
       return res.status(200).json(await commercialWorkerAction(supabase,req.body));
     }
@@ -70,6 +74,8 @@ return async function handler(req, res) {
       if(req.body?.activity_only !== true && req.body?.report_protocol===1) {
         const report=await claimCommercialEmail(supabase,id);
         if(report)return res.status(200).json(report);
+        const margin=await claimMarginEmail(supabase,id);
+        if(margin)return res.status(200).json(margin);
       }
       if(req.body?.reports_only===true)return res.status(200).json({status:'idle'});
       if(req.body?.activity_email_protocol === 1) {

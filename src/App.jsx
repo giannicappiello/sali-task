@@ -16,6 +16,7 @@ import BrandedDialogProvider from "./components/BrandedDialogProvider";
 import NotificationManager from "./components/NotificationManager";
 import ProductionEntry from "./components/ProductionEntry";
 import WorkspaceAccessGuard from "./components/WorkspaceAccessGuard";
+import MarginReportDelivery from "./pages/Settings/MarginReportDelivery";
 import SettingsAccessGuard from "./components/SettingsAccessGuard";
 import HrAttendanceProvider from "./modules/hr/HrAttendanceProvider";
 
@@ -168,6 +169,7 @@ function App() {
               <Route path="settings/menu" element={<SettingsAccessGuard adminOnly><MenuManagement /></SettingsAccessGuard>} />
               <Route path="settings/layout-builder/:targetType/:targetCode" element={<SettingsAccessGuard adminOnly><ScreenBuilder /></SettingsAccessGuard>} />
               <Route path="settings/ai" element={<SettingsAccessGuard any={["settings.manage"]}><AISettings /></SettingsAccessGuard>} />
+              <Route path="settings/margin-reports" element={<SettingsAccessGuard adminOnly><MarginReportDelivery /></SettingsAccessGuard>} />
               <Route path="settings/commercial-reports" element={<SettingsAccessGuard adminOnly><CommercialReportDelivery /></SettingsAccessGuard>} />
               <Route path="settings/company-letterheads" element={<SettingsAccessGuard any={["settings.manage"]}><CompanyLetterheads /></SettingsAccessGuard>} />
               <Route path="settings/crm-digital" element={<SettingsAccessGuard adminOnly><DigitalConnectionsSettings /></SettingsAccessGuard>} />

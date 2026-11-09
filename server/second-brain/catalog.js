@@ -37,6 +37,7 @@ import { mexalCashflowTools } from './mexal-cashflow.js';
 import {mexalIncomeStatementTools} from './mexal-conto-economico.js';
 import {mexalInventoryTools} from './mexal-inventory.js';
 import {mexalMarginSourceTools} from './mexal-margin-sources.js';
+import {marginReportTools} from '../reports/margin-service.js';
 import {readObjectivePreview} from '../production-objective-revisions.js';
 
 const read = (description, schema, execute) => ({ description, inputSchema: schema, execute, effect: 'read' });
@@ -53,7 +54,7 @@ const datasets = {
 export function createBrainCatalog(auth) {
   const controlled = availableControlledActions(auth);
   const tools = { ...workspaceReadTools(auth), ...operationalReadTools(auth), ...workspaceCostReadTools(auth), ...mexalFinanceTools(auth), ...mexalArchiveTools(auth), ...mexalCashflowTools(auth), ...mexalBankBalanceTools(auth),
-    ...mexalIncomeStatementTools(auth), ...mexalInventoryTools(auth), ...mexalMarginSourceTools(auth), ...productionEmergencyTools(auth), ...commercialReportTools(auth), ...chatEmailTools(auth),
+    ...mexalIncomeStatementTools(auth), ...mexalInventoryTools(auth), ...mexalMarginSourceTools(auth), ...marginReportTools(auth), ...productionEmergencyTools(auth), ...commercialReportTools(auth), ...chatEmailTools(auth),
     ...recoveryTools(auth, Boolean(controlled.MES_PLAN_APPLY)), ...memoryTools(auth), ...activityTools(auth), ...businessReadTools(auth), ...commerceReadTools(auth),
     ...rdpCreationTools(auth, Boolean(controlled.RDP_CREATE)),
     ...(controlled.FORMULA_CREATE_REVISION ? formulaReadTools(auth) : {}),

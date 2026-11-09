@@ -6,7 +6,7 @@ import {authorizeAIRequest} from '../ai/access.js';
 import {createReceipt,verifyReceipt} from '../second-brain/handler.js';
 import {requireFinanceAdmin} from '../second-brain/mexal-finance.js';
 import {MARGIN_AGENT_HASH,MARGIN_POLICY_HASH,marginHash} from './margin-policy.js';
-import {marginAgentConnection,triggerMarginReports} from './margin-trigger.js';
+import {marginAgentConnection,triggerMarginReports,checkMarginAgent} from './margin-trigger.js';
 import {createProgremesReadonlyAdmin} from '../progremes-readonly-auth.js';
 import {marginPlan,marginDispatch} from './margin-service.js';
 import {must,requireThat} from './commercial-policy.js';
@@ -19,6 +19,7 @@ export async function marginHumanRequest(req,{authorize=authorizeAIRequest,key=p
  }
  requireThat(req.method==='POST'&&req.body&&JSON.stringify(req.body).length<10000,'Richiesta non valida.');
  requireThat(key,'Conferma non disponibile.',503);
+ if(req.body.action==='check-agent')return checkMarginAgent(db,auth.profile.id);
  if(req.body.action==='confirmation'){
   requireThat(/^[a-f0-9-]{36}$/i.test(req.body.runId||''),'Lotto non valido.');
   const run=must(await db.from('margin_report_runs').select('id,owner_id,status,sha256,filename,period,notes').eq('id',req.body.runId).eq('owner_id',auth.profile.id).maybeSingle());

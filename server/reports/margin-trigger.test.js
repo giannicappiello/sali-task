@@ -1,6 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import {MARGIN_AGENT,MARGIN_AGENT_HASH,MARGIN_POLICY_HASH,marginTriggerDue} from './margin-policy.js';
-import {triggerMarginReports,marginAgentConnection} from './margin-trigger.js';
+import {triggerMarginReports,marginAgentConnection,checkMarginAgent} from './margin-trigger.js';
 import {sealToken} from './commercial-policy.js';
 const owner='aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa',secret='test-only-encryption-key',now=new Date('2026-12-10T09:00:00Z');
 function fixture(){
@@ -11,6 +11,11 @@ function fixture(){
 test('monthly timing follows Rome through winter, summer and year boundary',()=>{
  assert(marginTriggerDue(now));assert(marginTriggerDue(new Date('2027-07-10T08:00Z')));
  assert(!marginTriggerDue(new Date('2027-07-10T09:00Z')));assert(!marginTriggerDue(new Date('2026-12-09T09:00Z')));
+});
+test('connection test stays in ChatGPT, requires active owner plan and requests only two reads',async()=>{
+ const f=fixture();let calls=0;const deps={secret,fetchImpl:async(url,o)=>{calls++;assert(url.startsWith('https://api.chatgpt.com/'));const input=JSON.parse(o.body).input;assert.match(input,/esclusivamente BRAIN_STATUS e MARGIN_REPORT_PLAN/);assert.match(input,/non inviare email/);return {status:202,json:async()=>({conversation_url:'https://chatgpt.com/c/test-check',agent_trigger_run_id:'apirun_check'})}}};
+ assert.equal((await checkMarginAgent(f.db,owner,deps)).runId,'apirun_check');assert.equal(calls,1);
+ f.tables.margin_report_plans[0].enabled=false;await assert.rejects(checkMarginAgent(f.db,owner,deps),/non attivo/);assert.equal(calls,1);
 });
 test('disabled or changed plan cannot start ChatGPT and matching owner is required',async()=>{
  const f=fixture();f.tables.margin_report_plans[0].enabled=false;

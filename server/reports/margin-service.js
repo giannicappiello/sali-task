@@ -3,7 +3,7 @@ import {createHash} from 'node:crypto';
 import {PDFDocument} from 'pdf-lib';
 import {canReadFinance,requireFinanceAdmin} from '../second-brain/mexal-finance.js';
 import {objectSchema,uuidSchema} from '../second-brain/schema.js';
-import {MARGIN_AGENT_HASH,MARGIN_POLICY,MARGIN_POLICY_HASH,checkMarginPeriod,marginEnvelope} from './margin-policy.js';
+import {MARGIN_POLICY,MARGIN_POLICY_HASH,checkMarginPeriod,marginEnvelope} from './margin-policy.js';
 import {marginAgentConnection} from './margin-trigger.js';
 import {must,requireThat} from './commercial-policy.js';
 import {assertOwner,dispatchCommercialReports} from './commercial-service.js';
@@ -15,7 +15,7 @@ export async function marginPlan(auth){
  const runs=must(await auth.admin.from('margin_report_runs').select(publicFields).eq('owner_id',auth.profile.id).order('created_at',{ascending:false}).limit(24));
  const connection=await marginAgentConnection(auth.admin,auth.profile.id);
  const triggers=must(await auth.admin.from('margin_report_triggers').select('id,period,status,conversation_url,created_at').eq('owner_id',auth.profile.id).order('created_at',{ascending:false}).limit(12));
- return {policy:MARGIN_POLICY,policyHash:MARGIN_POLICY_HASH,enabled:plan?.enabled===true&&plan.policy_hash===MARGIN_POLICY_HASH,approvedAt:plan?.approved_at||null,runs,reviewUrl:MARGIN_REVIEW_URL,automation:{...connection,enabled:plan?.enabled===true&&plan.policy_hash===MARGIN_POLICY_HASH&&plan.agent_hash===MARGIN_AGENT_HASH,triggers}};
+ return {policy:MARGIN_POLICY,policyHash:MARGIN_POLICY_HASH,enabled:plan?.enabled===true&&plan.policy_hash===MARGIN_POLICY_HASH,approvedAt:plan?.approved_at||null,runs,reviewUrl:MARGIN_REVIEW_URL,automation:{...connection,enabled:plan?.enabled===true&&plan.policy_hash===MARGIN_POLICY_HASH&&plan.approved_by===auth.profile.id&&!!plan.approved_at&&connection.ready,triggers}};
 }
 export async function marginDispatch(){return dispatchCommercialReports();}
 export async function marginArtifact(auth,input){

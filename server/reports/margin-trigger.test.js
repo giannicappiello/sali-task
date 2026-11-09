@@ -12,14 +12,14 @@ test('monthly timing follows Rome through winter, summer and year boundary',()=>
  assert(marginTriggerDue(now));assert(marginTriggerDue(new Date('2027-07-10T08:00Z')));
  assert(!marginTriggerDue(new Date('2027-07-10T09:00Z')));assert(!marginTriggerDue(new Date('2026-12-09T09:00Z')));
 });
-test('disabled or unapproved channel cannot start ChatGPT and matching owner is required',async()=>{
+test('disabled or changed plan cannot start ChatGPT and matching owner is required',async()=>{
  const f=fixture();f.tables.margin_report_plans[0].enabled=false;
  const deps={now,secret,fetchImpl:()=>{throw Error('must not call')}};
  assert.equal((await triggerMarginReports(f.db,deps)).status,'no_active_plan');
- f.tables.margin_report_plans[0].enabled=true;f.tables.margin_report_plans[0].agent_hash=null;
+ f.tables.margin_report_plans[0].enabled=true;f.tables.margin_report_plans[0].policy_hash='outdated-policy';
  assert.equal((await triggerMarginReports(f.db,deps)).status,'no_active_plan');
  assert.equal((await marginAgentConnection(f.db,'other-owner')).ready,false);
- f.tables.margin_report_plans[0].agent_hash=MARGIN_AGENT_HASH;f.tables.commercial_report_settings[0].owner_id='other-owner';
+ f.tables.margin_report_plans[0].policy_hash=MARGIN_POLICY_HASH;f.tables.commercial_report_settings[0].owner_id='other-owner';
  await assert.rejects(triggerMarginReports(f.db,deps),/Collegamento/);assert.equal(f.tables.margin_report_triggers.length,0);
 });
 test('one ChatGPT invocation per owner/period, precise YTD and separate key from commercial',async()=>{

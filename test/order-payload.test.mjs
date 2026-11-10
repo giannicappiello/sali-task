@@ -79,11 +79,22 @@ assert.deepEqual(updatePayload, upsertPayload, "l'update da un record letto usa 
 assert.equal("mese_ordine" in updatePayload, false, "l'update/conferma non invia mese_ordine");
 
 const newOrderSource = await readFile("src/modules/orders/pages/NewOrder.jsx", "utf8");
-assert.match(newOrderSource, /\.insert\(orderPayload\)/);
+assert.match(newOrderSource, /\.insert\(\{\s*\.\.\.orderPayload,\s*modulo_ordini:\s*moduleCode\s*\}\)/);
 assert.match(newOrderSource, /buildWritableOrderPayload\(\{ note_mexal: noteMexal \}\)/);
-assert.match(newOrderSource, /await supabase\.rpc\([\s\S]*conferma_ordine_workspace[\s\S]*submitOrderToMexal\(order\.id\)/,
+assert.match(newOrderSource, /await supabase\.rpc\([\s\S]*conferma_ordine_workspace[\s\S]*submitOrderToMexal\(order\.id,\s*moduleCode\)/,
   "dopo la conferma il flusso prosegue verso la preparazione Mexal");
 assert.doesNotMatch(newOrderSource, /mese_ordine\s*:/,
   "New Order non costruisce più un payload con mese_ordine");
 
 console.log("order payload: generated columns are excluded and payment codes are normalized as integers");
+
+for (const customerAgent of [null, undefined, "", "   "]) {
+  const payload = buildNewOrderInsertPayload({dataOrdine:"2026-11-10",
+    customer:{...customer,codice_agente_mexal:customerAgent},agentCode:"UPLOADER",
+    paymentDescription:()=>"",comments:"",total:0,taxableTotal:0,vatTotal:0});
+  assert.equal(payload.codice_agente_mexal,null,"no uploader fallback when customer has no agent");
+}
+const trimmedAgent = buildNewOrderInsertPayload({dataOrdine:"2026-11-10",
+  customer:{...customer,codice_agente_mexal:" 602.00052 "},agentCode:"UPLOADER",
+  paymentDescription:()=>"",comments:"",total:0,taxableTotal:0,vatTotal:0});
+assert.equal(trimmedAgent.codice_agente_mexal,"602.00052");

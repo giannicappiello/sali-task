@@ -58,7 +58,6 @@ export function buildWritableOrderPayload(order) {
 export function buildNewOrderInsertPayload({
   dataOrdine,
   customer,
-  agentCode,
   payment,
   paymentDescription,
   comments,
@@ -73,7 +72,7 @@ export function buildNewOrderInsertPayload({
     codice_cliente: customer.codice_cliente,
     ragione_sociale_cliente: customer.ragione_sociale,
     partita_iva: customer.partita_iva || customer.piva || null,
-    codice_agente_mexal: customer.codice_agente_mexal || agentCode || null,
+    codice_agente_mexal: String(customer.codice_agente_mexal ?? "").trim() || null,
     codice_pagamento: payment?.codice ?? customer.codice_pagamento ?? null,
     descrizione_pagamento: payment?.descrizione || paymentDescription(customer),
     codice_listino: customer.codice_listino || null,

@@ -10,6 +10,9 @@ const scalar=value=>Array.isArray(value)?value[0]?.[1]:value;
 const cents=value=>value!=null && value!=='' && Number.isFinite(Number(value))?Math.round(Number(value)*100):null;
 const note=row=>String(scalar(row.nota) || '').trim();
 const stateSave=(db,id,state)=>checked(db.from('crm_external_connections').update({amazon_refund_state:state}).eq('id',id));
+const FINANCE_WINDOW_MS=86400000;
+const MIN_FINANCE_WINDOW_MS=60000;
+const financeWindow=state=>Math.max(MIN_FINANCE_WINDOW_MS,Math.min(FINANCE_WINDOW_MS,Number(state.financeWindowMs)||FINANCE_WINDOW_MS));
 
 async function findRefundDocument(mexal,refund,legacy=false){
  const marker=refundMarker(refund.event_key),rows=[],seen=new Set();let next;
@@ -148,25 +151,42 @@ export async function synchronizeAmazonRefunds({db,connection,secrets,clientForY
  if(!state.phase){
   const target=new Date(now.getTime()-180000).toISOString();
   const start=new Date(Math.max(Date.parse(from),Date.parse(state.coveredAt || from)-90*86400000)).toISOString();
-  state={...state,phase:'finance',from:start,to:new Date(Math.min(Date.parse(target),Date.parse(start)+179*86400000)).toISOString(),target,token:null};
+  state={...state,phase:'finance',from:start,to:new Date(Math.min(Date.parse(target),Date.parse(start)+financeWindow(state))).toISOString(),target,token:null};
   await save(state);return {hasMore:true,recordsRead:0};
  }
  // The manager holds the commerce lease; the RPC commits rows and cursor as
  // one transaction so a provider page can never be advanced without its data.
  const store=(kind,rows,next)=>checked(db.rpc('crm_store_amazon_refund_page_service',{p_connection_id:connection.id,p_expected_state:previous,p_kind:kind,p_rows:rows,p_next_state:next}));
  if(state.phase==='finance'){
+  // Migrate an interrupted wide scan without moving its start or coverage.
+  // A live pagination token retains its original arguments until consumed.
+  const duration=Date.parse(state.to)-Date.parse(state.from);
+  if(!state.token && duration>financeWindow(state)){
+   await save({...state,target:state.target || state.to,to:new Date(Date.parse(state.from)+financeWindow(state)).toISOString()});
+   return {hasMore:true,recordsRead:0};
+  }
   let page;
   try{page=await fetchFinance(connection,secrets,{from:state.from,to:state.to,nextToken:state.token});}
   catch(error){
+   if(error.message==='Risposta provider troppo grande.' && duration>MIN_FINANCE_WINDOW_MS){
+    const window=Math.max(MIN_FINANCE_WINDOW_MS,Math.floor(duration/2));
+    // Restart this window, even after a partially saved page. Stable event IDs
+    // deduplicate those rows; no token or date may skip the oversized page.
+    await save({...state,target:state.target || state.to,to:new Date(Date.parse(state.from)+window).toISOString(),financeWindowMs:window,token:null});
+    return {hasMore:true,recordsRead:0};
+   }
    if(state.token && error.code==='provider_400' && /token/i.test(error.message)){await save({...state,token:null});return {hasMore:true,recordsRead:0};}
    throw error;
   }
   const markets=new Set(connection.marketplace_ids || []);
   const rows=page.transactions.filter(row=>!row.marketplaceId || !markets.size || markets.has(row.marketplaceId)).map(row=>normalizeRefundTransaction(row,connection.amazon_refunds_from)).filter(Boolean);
   const next={...state,token:page.nextToken || null};
+  delete next.lastError;delete next.retryAt;
   if(!page.nextToken){
    if(state.target && Date.parse(state.to)<Date.parse(state.target)){
-    next.from=state.to;next.to=new Date(Math.min(Date.parse(state.target),Date.parse(state.to)+179*86400000)).toISOString();
+    // Overlap the boundary by one second so exclusive API date filters cannot
+    // lose an event posted exactly on it. The journal deduplicates the overlap.
+    next.from=new Date(Date.parse(state.to)-1000).toISOString();next.to=new Date(Math.min(Date.parse(state.target),Date.parse(next.from)+financeWindow(state))).toISOString();
    }else{
     next.phase='physical';next.coveredAt=state.to;
     // Re-read physical confirmations from the configured start, including late

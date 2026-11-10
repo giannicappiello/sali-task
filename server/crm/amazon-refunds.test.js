@@ -143,3 +143,33 @@ test('financial pages commit the provider cursor and rows together, and never ad
  await assert.rejects(()=>synchronizeAmazonRefunds({db,connection,secrets:{},fetchFinance:async()=>{throw Error('provider unavailable');}}),/unavailable/);
  assert.equal(calls.length,1);
 });
+
+test('wide interrupted refund scans resume in daily windows without skipping boundaries or advancing coverage',async()=>{
+ let state={active:false,phase:'finance',from:'2026-10-21T22:00:00.000Z',to:'2026-11-03T22:01:01.998Z',target:'2026-11-03T22:01:01.998Z',token:null,coveredAt:'2026-11-02T22:00:18.321Z',lastError:'Risposta provider troppo grande.'};
+ const initial=structuredClone(state),ranges=[],commits=[];
+ const db={from:()=>({update:row=>({eq:async()=>{state=row.amazon_refund_state;return {data:null};}})}),rpc:async(name,args)=>{assert.deepEqual(args.p_expected_state,state);commits.push(args);state=args.p_next_state;return {data:null};}};
+ const connection=()=>({id:'connection',marketplace_ids:['APJ6JRA9NG5V4'],amazon_refunds_from:'2026-10-22',amazon_refund_state:state});
+ const run=()=>synchronizeAmazonRefunds({db,connection:connection(),secrets:{},fetchFinance:async(_c,_s,range)=>{ranges.push(range);return {transactions:[],nextToken:null};}});
+ await run();assert.equal(ranges.length,0);assert.equal(state.from,initial.from);assert.equal(state.target,initial.target);assert.equal(state.coveredAt,initial.coveredAt);
+ for(let i=0;i<20 && state.phase==='finance';i++)await run();
+ assert.equal(state.phase,'physical');assert.equal(state.coveredAt,initial.target);assert.equal(ranges[0].from,initial.from);assert.equal(ranges.at(-1).to,initial.target);
+ for(let i=0;i<ranges.length;i++){assert.ok(Date.parse(ranges[i].to)-Date.parse(ranges[i].from)<=86400000);if(i)assert.equal(Date.parse(ranges[i].from),Date.parse(ranges[i-1].to)-1000);}
+ assert.equal(commits.length,ranges.length);assert.equal(state.lastError,undefined);
+});
+
+test('oversized financial page restarts the same range smaller and discards only its pagination token',async()=>{
+ let saved;const state={phase:'finance',active:true,from:'2026-11-07T00:00:00.000Z',to:'2026-11-08T00:00:00.000Z',target:'2026-11-10T00:00:00.000Z',token:'page-2',coveredAt:'2026-11-02T00:00:00Z'};
+ const connection={id:'connection',amazon_refunds_from:'2026-10-22',amazon_refund_state:state};
+ const db={from:()=>({update:row=>({eq:async()=>{saved=row.amazon_refund_state;return {data:null};}})}),rpc:()=>{throw Error('No commit on a failed page');}};
+ const fetchFinance=async(_c,_s,args)=>{assert.equal(args.nextToken,'page-2');throw Error('Risposta provider troppo grande.');};
+ assert.equal((await synchronizeAmazonRefunds({db,connection,secrets:{},fetchFinance})).hasMore,true);
+ assert.equal(saved.from,state.from);assert.equal(saved.target,state.target);assert.equal(saved.coveredAt,state.coveredAt);assert.equal(saved.token,null);assert.equal(saved.financeWindowMs,43200000);assert.equal(saved.to,'2026-11-07T12:00:00.000Z');
+ await assert.rejects(()=>synchronizeAmazonRefunds({db,connection:{...connection,amazon_refund_state:{...state,to:'2026-11-07T00:01:00.000Z'}},fetchFinance}),/troppo grande/);
+});
+
+test('new refund cycles start with one day while keeping the fixed catch-up target',async()=>{
+ let saved;const now=new Date('2026-11-10T10:00:00Z');
+ const db={from:()=>({update:row=>({eq:async()=>{saved=row.amazon_refund_state;return {data:null};}})})};
+ await synchronizeAmazonRefunds({db,connection:{id:'connection',amazon_refunds_from:'2026-10-22',amazon_refund_state:{}},now});
+ assert.equal(Date.parse(saved.to)-Date.parse(saved.from),86400000);assert.equal(saved.target,'2026-11-10T09:57:00.000Z');
+});

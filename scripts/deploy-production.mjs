@@ -38,28 +38,28 @@ run(process.platform === "win32" ? "npm.cmd" : "npm", ["run", "build"]);
 console.log("\n[2/7] Applicazione e verifica migrazioni Supabase collegate");
 // Vercel does not apply Supabase migrations. Run this only from the explicitly
 // production deployment command so the RPC is present before the new shell is served.
-run(npxCommand, ["supabase", "db", "push", "--linked", "--yes"]);
+run(npxCommand, ["supabase@2.116.0", "db", "push", "--linked", "--skip-vault", "--yes"]);
 
 console.log("\n[3/7] Pubblicazione del deployment staged");
-const deployOutput = run(npxCommand, ["vercel", "deploy", "--prod", "--yes"]);
+const deployOutput = run(npxCommand, ["vercel@65.12.1", "deploy", "--prod", "--skip-domain", "--yes"]);
 const deploymentUrl = deploymentUrlFrom(deployOutput);
 console.log(`Deployment candidato: ${deploymentUrl}`);
 
 console.log("\n[4/7] Verifica stato READY");
-const inspectOutput = run(npxCommand, ["vercel", "inspect", deploymentUrl]);
+const inspectOutput = run(npxCommand, ["vercel@65.12.1", "inspect", deploymentUrl]);
 if (!/status\s+.*Ready/i.test(inspectOutput)) throw new Error("Il deployment non risulta READY.");
 
 console.log("\n[5/7] Verifica pagina e service worker");
-const page = run(npxCommand, ["vercel", "curl", "/", "--deployment", deploymentUrl, "--", "--silent"]);
+const page = run(npxCommand, ["vercel@65.12.1", "curl", "/", "--deployment", deploymentUrl, "--", "--silent"]);
 if (!page.includes('<div id="root"></div>')) throw new Error("La pagina del deployment non contiene l'app Workspace.");
-const serviceWorker = run(npxCommand, ["vercel", "curl", "/sw.js", "--deployment", deploymentUrl, "--", "--silent"]);
+const serviceWorker = run(npxCommand, ["vercel@65.12.1", "curl", "/sw.js", "--deployment", deploymentUrl, "--", "--silent"]);
 if (!/precacheAndRoute|__WB_MANIFEST/.test(serviceWorker)) throw new Error("Service worker PWA non valido.");
 
 console.log("\n[6/7] Promozione sui domini di produzione");
-run(npxCommand, ["vercel", "promote", deploymentUrl, "--yes", "--timeout", "3m"], { allowCurrentProduction: true });
+run(npxCommand, ["vercel@65.12.1", "promote", deploymentUrl, "--yes", "--timeout", "3m"], { allowCurrentProduction: true });
 
 console.log(`\n[7/7] Verifica dominio operativo ${productionDomain}`);
-const domainInspect = run(npxCommand, ["vercel", "inspect", `https://${productionDomain}`]);
+const domainInspect = run(npxCommand, ["vercel@65.12.1", "inspect", `https://${productionDomain}`]);
 const deploymentHost = new URL(deploymentUrl).hostname;
 if (!domainInspect.includes(deploymentHost)) {
   throw new Error(`${productionDomain} non punta al deployment appena promosso.`);

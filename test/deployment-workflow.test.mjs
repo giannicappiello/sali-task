@@ -26,3 +26,9 @@ test("la produzione segue pubblica, verifica e promuovi", async () => {
   assert.match(script, /workspace\.progre\.it/);
 });
 
+
+test("deployment pins reviewed CLIs and separates Vault and domain promotion", async () => {
+  const script = await read("scripts/deploy-production.mjs");
+  assert.ok(script.includes('"supabase@2.116.0", "db", "push", "--linked", "--skip-vault", "--yes"'));
+  assert.ok(script.includes('"vercel@65.12.1", "deploy", "--prod", "--skip-domain", "--yes"'));
+});

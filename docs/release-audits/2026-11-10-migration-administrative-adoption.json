@@ -1,0 +1,205 @@
+{
+  "audit_kind": "administrative-adoption-of-existing-database-state",
+  "status": "EXECUTED_VERIFIED_METADATA_ONLY",
+  "project_ref": "eteyjxybcyrvuxifkrbm",
+  "verified_repository_commit": "468526b6c51813954b08de79cca905af4faf6e73",
+  "cli_version": "2.116.0",
+  "declaration": "La registrazione applied documenta una adozione amministrativa dello stato corrente; non certifica esecuzione storica integrale. Il repair non ha eseguito il SQL dei file o ricreato effetti mancanti.",
+  "production_application_sql_allowed": false,
+  "preserve_current_catalog_and_permissions": true,
+  "expected_history_before": 477,
+  "expected_history_after": 485,
+  "versions": [
+    {
+      "version": "20260922150000",
+      "file": "20260922150000_production_workbench_catalog.sql",
+      "sha256": "10fbc678748da2ca7b9426368127cd5683b69e52d711cd51cf17885a5dde5d19",
+      "purpose": "Catalogo Ordini e avanzamento e assegnabilità MES",
+      "verified_state": "partial_state_unexplained_catalog_drift",
+      "present_superseded_or_missing_effects": "Funzione trigger identica al corpo locale e trigger presente; schermata presente. Moduli production_progress e progremes_planningproduction assenti; mapping progremes ordine10/default=true anziché5/false. Nessuna migrazione registrata trovata per i codici catalogo.",
+      "risk_if_executed": "CREATE FUNCTION/trigger fallirebbe; se aggirato ricreerebbe modulo non presente. Non ricostruire né attestare esecuzione storica.",
+      "administrative_disposition": "Record metadata only; never execute this SQL on the existing production database during reconciliation.",
+      "historical_full_execution_proven": false,
+      "source_intro_commit": "296bab49acd1c1bfd8839740408f4f73b5808d24"
+    },
+    {
+      "version": "20260927090000",
+      "file": "20260927090000_crm_workspace_costs.sql",
+      "sha256": "218dc9ecd05827dcc85b363384fc8c8b0e1ef0791211b79b82ce777ae961536d",
+      "purpose": "Costi consuntivi PRIVATE e schermata rendicontazione",
+      "verified_state": "schema_present_catalog_and_acl_evolved",
+      "present_superseded_or_missing_effects": "Tabella, 13 colonne (incluse successive manodopera), vincoli, indici e RLS presenti. Schermata e mapping presenti, ordine40 anziché26; vecchie schermate assenti. Grants anon/authenticated più ampi della dichiarazione locale, con RLS e policy restrittive customer/Club aggiuntive; non prova accesso dati e non modificarli.",
+      "risk_if_executed": "CREATE TABLE fallirebbe; replay catalogo potrebbe reintrodurre configurazione obsoleta. Non certificata la storia DML.",
+      "administrative_disposition": "Record metadata only; never execute this SQL on the existing production database during reconciliation.",
+      "historical_full_execution_proven": false,
+      "source_intro_commit": "296bab49acd1c1bfd8839740408f4f73b5808d24"
+    },
+    {
+      "version": "20260927160000",
+      "file": "20260927160000_crm_exclude_invoiced_orders.sql",
+      "sha256": "c351121519bfd84cb5a264d613216c0073a69ca9c5f2a633a165c89500e301c2",
+      "purpose": "Esclusione ordini fatturati dalle metriche CRM",
+      "verified_state": "represented_by_later_recorded_definitions",
+      "present_superseded_or_missing_effects": "Funzioni presenti: corpi attuali da 20261028170000,20261030201000,20261031190000; wrapper dashboard da 20260927183000.",
+      "risk_if_executed": "CREATE OR REPLACE arretrerebbe definizioni CRM correnti; non rieseguire.",
+      "administrative_disposition": "Record metadata only; never execute this SQL on the existing production database during reconciliation.",
+      "historical_full_execution_proven": false,
+      "source_intro_commit": "296bab49acd1c1bfd8839740408f4f73b5808d24"
+    },
+    {
+      "version": "20260927183000",
+      "file": "20260927183000_crm_verified_open_documents.sql",
+      "sha256": "ce0a271d3c84f06d873e77f5ec0b425fff8438c0e139daeb559c94beb09aeb7f",
+      "purpose": "Valori dei documenti aperti verificati Mexal e metriche CRM",
+      "verified_state": "represented_by_current_and_later_definitions",
+      "present_superseded_or_missing_effects": "Wrapper crm_commercial_control_dashboard corpo identico al file; helper e dataset/metrics aggiornati da 20261028170000; dashboard metrics da20261031190000.",
+      "risk_if_executed": "Replay sovrascriverebbe correzioni ottobre su documenti, IVA, aggregati e filtri.",
+      "administrative_disposition": "Record metadata only; never execute this SQL on the existing production database during reconciliation.",
+      "historical_full_execution_proven": false,
+      "source_intro_commit": "296bab49acd1c1bfd8839740408f4f73b5808d24"
+    },
+    {
+      "version": "20260927190000",
+      "file": "20260927190000_crm_open_order_detail.sql",
+      "sha256": "a9c3ca25fc738ae991fe47b1698d47b4faba5eb9e4a7286b08b0d5d1deb91793",
+      "purpose": "Dettaglio ordini aperti per categoria",
+      "verified_state": "represented_by_later_recorded_definition",
+      "present_superseded_or_missing_effects": "Corpo RPC corrente identico a20261028170000_crm_exclude_ft4_artgen.sql.",
+      "risk_if_executed": "Sovrascrive versione più recente, con rischio filtri e conteggi obsoleti.",
+      "administrative_disposition": "Record metadata only; never execute this SQL on the existing production database during reconciliation.",
+      "historical_full_execution_proven": false,
+      "source_intro_commit": "296bab49acd1c1bfd8839740408f4f73b5808d24"
+    },
+    {
+      "version": "20260927193000",
+      "file": "20260927193000_crm_ordered_products.sql",
+      "sha256": "6a087bdad0743120b44ea857ff8a8a0dd0aad94a4566c14b66a74952b6f5f848",
+      "purpose": "Prodotti e quantità ordinati/prenotati PH PR stralci",
+      "verified_state": "represented_by_later_recorded_definition",
+      "present_superseded_or_missing_effects": "Corpo RPC corrente identico a20261028170000_crm_exclude_ft4_artgen.sql.",
+      "risk_if_executed": "Sovrascrive versione più recente e relative esclusioni.",
+      "administrative_disposition": "Record metadata only; never execute this SQL on the existing production database during reconciliation.",
+      "historical_full_execution_proven": false,
+      "source_intro_commit": "296bab49acd1c1bfd8839740408f4f73b5808d24"
+    },
+    {
+      "version": "20260927200000",
+      "file": "20260927200000_b2b_agent_products.sql",
+      "sha256": "81f4188331799f149058ce9e6c440beceb08807e39f5661385ed7edb99a4f84d",
+      "purpose": "Metriche, clienti e prodotti B2B filtrati per agente",
+      "verified_state": "represented_by_current_and_later_definitions",
+      "present_superseded_or_missing_effects": "crm_b2b_agent_customers e crm_customer_status_counts_filtered corpi identici al file; dashboard_metrics_filtered da20261031190000; dashboard_product_lines da20261028170000.",
+      "risk_if_executed": "Ripristina versioni obsolete di due funzioni; non rieseguire intero file.",
+      "administrative_disposition": "Record metadata only; never execute this SQL on the existing production database during reconciliation.",
+      "historical_full_execution_proven": false,
+      "source_intro_commit": "296bab49acd1c1bfd8839740408f4f73b5808d24"
+    },
+    {
+      "version": "20260927210000",
+      "file": "20260927210000_workspace_labor_material_costs.sql",
+      "sha256": "e0444ac27bc35b89f3efecfcf618a1cc57d1aa4bea2300c96ab6de7292e852db",
+      "purpose": "Tipologie costo, ore, tariffa e operatore con validazione",
+      "verified_state": "schema_and_function_present_history_unproven",
+      "present_superseded_or_missing_effects": "Colonne cost_type/hours/hourly_rate/operator_name, vincoli workspace_cost_labor_fields e trigger presenti; corpo validate_workspace_labor_cost identico al file.",
+      "risk_if_executed": "ADD COLUMN e CREATE TRIGGER fallirebbero per duplicati. Non prova quando né con quale script furono applicati.",
+      "administrative_disposition": "Record metadata only; never execute this SQL on the existing production database during reconciliation.",
+      "historical_full_execution_proven": false,
+      "source_intro_commit": "296bab49acd1c1bfd8839740408f4f73b5808d24"
+    }
+  ],
+  "rename_only": [
+    {
+      "from": "20261104130000_archived_ddt_bc1_review.sql",
+      "to": "20261104133601_archived_ddt_bc1_review.sql",
+      "sha256_unchanged": "5fe2082e56916a0854743062e442758c6abe7260f42683ade22acbe0f960e9df",
+      "evidence": "SQL remoto identico dopo sola normalizzazione CRLF e whitespace esterno."
+    },
+    {
+      "from": "20261108101753_station_objective_versions.sql",
+      "to": "20261108103044_station_objective_versions.sql",
+      "sha256_unchanged": "b35ea5c22ff792f2fc4d0c0618bff347c8959bcf55830396bcd9afd2f8fe254b",
+      "evidence": "SQL remoto identico dopo sola normalizzazione CRLF e whitespace esterno."
+    },
+    {
+      "from": "20261109190000_margin_report_delivery.sql",
+      "to": "20261109174938_margin_report_delivery.sql",
+      "sha256_unchanged": "5c623d01820a3ac979fd50d647aef9794bafe98aa78bbcecb4700ed4f5616ef5",
+      "evidence": "SQL remoto identico dopo sola normalizzazione CRLF e whitespace esterno."
+    },
+    {
+      "from": "20261109191000_margin_report_delivery_timing.sql",
+      "to": "20261109175504_margin_report_delivery_timing.sql",
+      "sha256_unchanged": "90e529878945173091b60a76a6a8c0af99a73b75b502e686b01cdc0dbc17ad1a",
+      "evidence": "SQL remoto identico dopo sola normalizzazione CRLF e whitespace esterno."
+    },
+    {
+      "from": "20261109192000_margin_chatgpt_agent.sql",
+      "to": "20261109182949_margin_chatgpt_agent.sql",
+      "sha256_unchanged": "a4e2b5d5c7b64a3b3f2e43fa2b4487672925d079f81f47f8d4473d526a7d2998",
+      "evidence": "SQL remoto identico dopo sola normalizzazione CRLF e whitespace esterno."
+    }
+  ],
+  "preserved_differences": [
+    {
+      "area": "production_workbench_catalog",
+      "missing": [
+        "workspace_moduli.production_progress",
+        "workspace_moduli.progremes_planningproduction",
+        "production_progress/workspace.production.progress mapping"
+      ],
+      "present": [
+        "workspace.production.progress screen",
+        "production_workbench_catalog_defaults function and trigger"
+      ],
+      "different": [
+        "progremes/workspace.production.progress mapping has ordine10/predefinita=true; file proposes5/false"
+      ],
+      "decision": "Keep current state. Do not create missing historical modules or alter mapping."
+    },
+    {
+      "area": "crm_workspace_costs",
+      "present": [
+        "table, columns, constraints, indexes, RLS, costs_read/costs_write policies",
+        "rendicontazione screen and mapping"
+      ],
+      "different": [
+        "rendicontazione mapping ordine40, file26",
+        "historical sviluppi/pipeline screens and mappings absent",
+        "additional restrictive customer/Club policies and broader current ACL compared with historical grants"
+      ],
+      "decision": "Keep current catalog and permissions exactly; metadata adoption is not approval of any ACL alteration."
+    }
+  ],
+  "remaining_limits": [
+    "Full historical execution date not proven; schema_migrations has no applied_at.",
+    "Metadata adoption reconciles the current database ledger, not a global certification of clean replay.",
+    "Sprint1 prerequisites missing before first repository migration are a separate pre-existing bootstrap limitation."
+  ],
+  "synthetic_test": {
+    "status": "PASS",
+    "cli_version": "2.116.0",
+    "history": "477 to485, only specified8 added; prior477 unchanged",
+    "application_state": "Schema and synthetic application data unchanged",
+    "canonical_dry_run_and_push": "up to date with --skip-vault; full dump unchanged",
+    "five_renames": "Wrong timestamps rejected; corrected timestamps no-op",
+    "repair_metadata": "Stores version/name/statements without executing statements; null created_by/idempotency_key/rollback in fixture",
+    "repeat_repair": "Ordered ledger unchanged; raw dump COPY row ordering may change, so compare canonical rows",
+    "scope_limit": "Synthetic mechanism test, not certification of real production schema or global replay",
+    "source": "Isolated PostgreSQL17.11, Supabase CLI2.116.0, network none, no published ports"
+  },
+  "production_verification": {
+    "verified_at_utc": "2026-11-10T13:20:09.959662Z",
+    "history_before": 477,
+    "history_after": 485,
+    "added_only_authorized_eight": true,
+    "prior_full_row_fingerprints_unchanged": true,
+    "added_metadata_matches_official_cli_parser": true,
+    "application_pack_unchanged": true,
+    "hr_exists": true,
+    "hr_authenticated_can_execute": true,
+    "canonical_dry_run": "upToDate=true; migrations,seeds,roles empty",
+    "canonical_push": "upToDate=true; migrations,seeds,roles empty",
+    "vault_updated": false,
+    "application_sql_executed": false
+  }
+}

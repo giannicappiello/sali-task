@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util';
 import { Buffer } from 'node:buffer';
 import { createHash,randomUUID } from 'node:crypto';
 import { PDFDocument } from 'pdf-lib';
@@ -95,7 +96,7 @@ export async function reportArtifact(auth,input) {
   }
   const recipients=await loadReportRecipients(auth.admin);
   requireThat(recipientsFingerprint(recipients)===batch.recipients_hash,'Contatti o collegamenti variati: il lotto richiede revisione.',409);
-  requireThat(JSON.stringify(buildReportManifest(recipients).targets)===JSON.stringify(batch.manifest),'Perimetro report variato.',409);
+  requireThat(isDeepStrictEqual(buildReportManifest(recipients).targets,batch.manifest),'Perimetro report variato.',409);
   const target=batch.manifest.find(t=>t.key===input.artifactKey);
   requireThat(target,'Report fuori dal piano approvato.',403);
   requireThat(batch.status==='requested','Lotto già accodato o non disponibile; leggere lo stato prima di ripetere.',409);

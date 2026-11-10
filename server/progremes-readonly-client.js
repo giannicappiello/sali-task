@@ -111,6 +111,7 @@ const RESOURCE_DEFINITIONS = Object.freeze({
       "articoloId", "codiceArticolo", "descrizioneArticolo", "numeroMagazzino",
       "quantita", "quantitaImpegnata", "quantitaDisponibile", "stato", "dataAggiornamento",
     ]),
+    optionalFields: Object.freeze(["giacenzaId", "lotto", "mexalIdLotto", "unitaMisura", "stockBasis", "sourceTimezone", "readAtUtc", "syncedThroughUtc"]),
   }),
   planning: Object.freeze({
     path: "planning",

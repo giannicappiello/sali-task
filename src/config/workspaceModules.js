@@ -1,4 +1,5 @@
 export const WORKSPACE_MODULES = Object.freeze({
+  anomalie: { code: "anomalie", label: "Anomalie", kind: "business", departmentAssignable: true, roleConfigurable: true },
   hr: { code: "hr", label: "Modulo HR", kind: "business", selfServiceLevel: "scrittura" },
   human_resources: { code: "human_resources", label: "Human Resources", kind: "business", selfServiceLevel: "scrittura" },
   home: { code: "home", label: "Home", kind: "system", alwaysAvailable: true },

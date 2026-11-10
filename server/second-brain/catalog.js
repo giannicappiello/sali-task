@@ -1,4 +1,5 @@
 import { addActivityStatus } from './activity-status.js';
+import { anomalyTools } from '../anomalies/tools.js';
 import { chatEmailTools } from './chat-email-tools.js';
 import { workspaceContactTools } from './workspace-contacts.js';
 import { getChatEmail, getChatEmailDelegation } from '../email/chat-email-service.js';
@@ -135,7 +136,7 @@ export function createBrainCatalog(auth) {
     if (name === 'MES_DOCUMENT_GENERATE' && !controlled.MES_PLAN_APPLY) continue;
     tools[name] = { description: `Intestazioni/documenti: ${name}. Le modifiche creano solo proposte da confermare.`, inputSchema: HEADING_TOOL_SCHEMAS[name], effect: descriptor.risk === 'write' ? 'propose' : 'read', execute: input => executeHeadingModelTool(auth, name, input) };
   }
-  Object.assign(tools,sourceMemoryTools(auth,tools));
+  Object.assign(tools,sourceMemoryTools(auth,tools),anomalyTools(auth));
   tools.BRAIN_DATA_COVERAGE = dataCoverageTool(tools);
   // This boundary deliberately excludes chat(), generateText(), development-agent,
   // order-document AI extraction and every model-backed legacy delegate.

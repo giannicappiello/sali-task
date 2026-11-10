@@ -28,9 +28,9 @@ test("graphical releases support lot recovery and shortage coverage without repl
     assert.throws(() => assertPlanningConfirmation(input, v));
   }
 });
-test("MES cannot be called without the operational permission", async () => {
+test("MES reads cannot be called without the dedicated read permission", async () => {
   let calls = 0;
-  await assert.rejects(planningCall({ scoped: { rpc: async () => ({ data: false }) } }, "state", {}, () => { calls++; }), /Permesso/);
+  await assert.rejects(planningCall({ scoped: { rpc: async () => ({ data: false }) } }, "state", {}, () => { calls++; }), /Lettura planning/);
   assert.equal(calls, 0);
 });
 test("old MES fallback HTTP 400 explains the required update instead of claiming an empty plan", async () => {

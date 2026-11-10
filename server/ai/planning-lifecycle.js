@@ -26,8 +26,9 @@ export const planningRequestSchema = { type: "object", additionalProperties: fal
 
 export async function planningCall(auth, operation, input = {}, transport = fetch) {
   if (!["state", "get", "simulate", "batches", "addition-candidates", "addition-preview", "order-revision", "merge-preview"].includes(operation)) throw new Error("Operazione di pianificazione non disponibile.");
-  const { data, error } = await auth.scoped.rpc("company_mes_ai_can_write");
-  if (error || data !== true) throw Object.assign(new Error("Permesso operativo MES richiesto."), { status: 403 });
+  const readOnly = ["state", "get", "batches"].includes(operation);
+  const { data, error } = await auth.scoped.rpc(readOnly ? "workspace_planning_can_read_snapshot" : "company_mes_ai_can_write");
+  if (error || data !== true) throw Object.assign(new Error(readOnly ? "Lettura planning non autorizzata o ambito non supportato dallo snapshot MES." : "Permesso operativo MES richiesto."), { status: 403 });
   const secret = String(process.env.PROGREMES_INTEGRATION_SECRET || "").trim();
   const base = String(process.env.PROGREMES_URL || "").trim();
   if (!secret || !base) throw new Error("Collegamento MES non configurato.");

@@ -2,6 +2,14 @@ import productionActions from "../../server/production-actions-handler.js";
 import { handleInventorySnapshot } from "../../server/progremes-inventory.js";
 
 export default async function handler(req, res) {
+  if(req.query?.route==='anomalies-cron') {
+    const {handleAnomalyCron}=await import('../../server/anomalies/worker.js');
+    return handleAnomalyCron(req,res);
+  }
+  if(req.query?.route==='anomalies') {
+    const {handleAnomalies}=await import('../../server/anomalies/handler.js');
+    return handleAnomalies(req,res);
+  }
   if(req.query?.route==='margin-reports') {
     const {handleMarginReports}=await import('../../server/reports/margin-handler.js');
     return handleMarginReports(req,res);

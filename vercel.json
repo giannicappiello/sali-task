@@ -25,6 +25,10 @@
   },
   "crons": [
     {
+      "path": "/api/mexal/automation?route=anomalies-cron",
+      "schedule": "0 5,6 * * *"
+    },
+    {
       "path": "/api/mexal/automation?route=margin-reports&cron=1",
       "schedule": "0 8,9 10 * *"
     },

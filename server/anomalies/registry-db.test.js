@@ -32,7 +32,7 @@ test('isolated Postgres: RLS, sources, area+module, proposals, audit and optimis
  create function workspace_operation_codes(p uuid) returns text[] language sql stable security definer as $$ select case when manage then array['anomalies.manage','anomalies.supervise'] else array[]::text[] end from test_grants where user_id=p $$;
  create function second_brain_enabled() returns boolean language sql stable as $$ select true $$;
  create function workspace_ai_can_confirm() returns boolean language sql stable as $$ select true $$;
- create function workspace_ai_capabilities() returns jsonb language sql stable as $$ select '{"allowed_modules":["anomalie"]}'::jsonb $$;
+ create function workspace_ai_capabilities() returns jsonb language sql stable as $$ select jsonb_build_object('allowed_modules',array['anomalie','progremes','crm_online','messaggi']) $$;
  create table second_brain_proposals(id uuid primary key default gen_random_uuid(),user_id uuid,tool text constraint second_brain_proposals_tool_check check(tool in ('MEMORY_SAVE','ACTIVITY_CREATE','PROJECT_UPDATE','TASK_UPDATE')),input jsonb,before_snapshot jsonb,status text default 'proposed',result jsonb,expires_at timestamptz default now()+interval '30 minutes',confirmed_at timestamptz);
  alter table second_brain_proposals enable row level security;
  create policy own on second_brain_proposals to authenticated using(user_id=auth.uid()) with check(user_id=auth.uid());

@@ -6,6 +6,7 @@ export async function readAnomalies(auth, input = {}) {
  const offset = input.offset ?? 0, limit = input.limit ?? 50;
  if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw Object.assign(Error('Pagina non valida.'), { status: 400 });
  let query = auth.scoped.from('anomalies').select('*').order('last_seen_at', { ascending: false }).order('id').range(offset, offset + limit);
+ if (Array.isArray(auth.capabilities?.allowed_modules)) query = query.containedBy('source_modules', auth.capabilities.allowed_modules);
  if (input.id) query = query.eq('id', input.id);
  if (input.status) query = query.eq('status', input.status);
  if (input.category) query = query.eq('category', input.category);
@@ -18,6 +19,7 @@ export function anomalyTools(auth) {
  const tools = {
   ANOMALIES_READ: { description: 'Legge il registro centrale anomalie autorizzate, con paginazione, prove e link Workspace. Rispetta area, modulo, fonti e ambito RLS; nessuna modifica.', inputSchema: readSchema, effect: 'read', execute: input => readAnomalies(auth, input) },
   ANOMALY_HISTORY: { description: 'Legge commenti e storico di una anomalia autorizzata. Nessuna modifica.', inputSchema: objectSchema({ id: uuidSchema, offset: { type: 'integer', minimum: 0 } }, ['id']), effect: 'read', execute: async input => {
+   if (!(await readAnomalies(auth,{ id:input.id,limit:1 })).items.length) return {items:[],nextOffset:null};
    const offset = input.offset ?? 0;
    const rows = checked(await auth.scoped.from('anomaly_events').select('*').eq('anomaly_id', input.id).order('created_at').order('id').range(offset, offset + 50));
    return { items: rows.slice(0, 50), nextOffset: rows.length > 50 ? offset + 50 : null };

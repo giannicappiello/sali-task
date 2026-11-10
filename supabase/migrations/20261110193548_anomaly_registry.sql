@@ -23,6 +23,14 @@ insert into public.workspace_menu_moduli values('anomalie','anomalie',10);
 insert into public.permessi(codice,descrizione,modulo) values
  ('anomalies.manage','Gestisce anomalie nel proprio ambito','anomalie'),
  ('anomalies.supervise','Assegna e supervisiona anomalie nel proprio ambito','anomalie');
+-- Register the new AI-readable modules in the existing capability whitelist.
+-- Keep its current per-user/department decisions and admin semantics unchanged.
+do $$ declare original text; revised text; begin
+ select pg_get_functiondef('public.workspace_ai_capabilities()'::regprocedure) into original;
+ revised:=replace(original,'''crm_online'',''messaggi''','''crm_online'',''messaggi'',''magazzino'',''anomalie''');
+ if revised=original then raise exception 'UNEXPECTED_AI_CAPABILITY_DEFINITION'; end if;
+ execute revised;
+end $$;
 
 create table public.anomaly_agents (
  code text primary key, name text not null, enabled boolean not null default false,
@@ -150,6 +158,7 @@ begin
  if p_input - array['id','expectedVersion','status','ownerId','comment','taskId','correctiveProposal'] <> '{}' then raise exception 'INVALID_INPUT'; end if;
  select * into a from public.anomalies where id=(p_input->>'id')::uuid;
  if not found or not public.anomaly_can_read(a.owner_id,a.department_id,a.source_modules) then raise exception 'NOT_ACCESSIBLE' using errcode='42501'; end if;
+ if exists(select 1 from unnest(a.source_modules) m where not coalesce(public.workspace_ai_capabilities()->'allowed_modules','[]') ? m) then raise exception 'SOURCE_AI_SCOPE_REQUIRED' using errcode='42501'; end if;
  if a.version is distinct from (p_input->>'expectedVersion')::integer then raise exception 'RECORD_CHANGED'; end if;
  permission:=case when p_input ? 'ownerId' then 'anomalies.supervise' else 'anomalies.manage' end;
  if not permission=any(public.workspace_operation_codes(public.workspace_current_profile_id())) then raise exception 'SPECIFIC_PERMISSION_REQUIRED' using errcode='42501'; end if;
@@ -211,6 +220,7 @@ begin
   permission:=case when p.input ? 'ownerId' then 'anomalies.supervise' else 'anomalies.manage' end;
   if not public.anomaly_can_read(a.owner_id,a.department_id,a.source_modules)
    or not permission=any(public.workspace_operation_codes(public.workspace_current_profile_id())) then raise exception 'FORBIDDEN' using errcode='42501'; end if;
+  if exists(select 1 from unnest(a.source_modules) m where not coalesce(public.workspace_ai_capabilities()->'allowed_modules','[]') ? m) then raise exception 'SOURCE_AI_SCOPE_REQUIRED' using errcode='42501'; end if;
   if a.version is distinct from (p.input->>'expectedVersion')::integer then raise exception 'RECORD_CHANGED'; end if;
   if p.input ? 'ownerId' then
    select * into recipient from public.utenti where id=(p.input->>'ownerId')::uuid and attivo is not false;

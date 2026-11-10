@@ -26,9 +26,12 @@ export function normalizeRefundTransaction(row,fromDate){
   if(!row.marketplaceId)fail('Marketplace rimborso non disponibile.');
   const saleRoots=(row.breakdowns || []).filter(b=>b.breakdownType==='Refunded Sales');
   if(saleRoots.length!==1)fail('Rimborso senza totale Refunded Sales distinto dalle commissioni.');
-  const total=cents(saleRoots[0].breakdownAmount);
+  // Amazon groups the reversal of a buyer promotion under Refunded Expenses.
+  // It offsets customer charges (e.g. free shipping); commissions still do not.
+  const promotions=(row.breakdowns || []).filter(b=>b.breakdownType==='Refunded Expenses').flatMap(b=>b.breakdowns || []).filter(b=>b.breakdownType==='PromoRebates');
+  const total=cents(saleRoots[0].breakdownAmount)+promotions.reduce((sum,b)=>sum+cents(b.breakdownAmount),0);
   if(total>=0)fail('Rimborso privo di importo negativo verso il cliente.');
-  const allowedCharges=new Set(['ProductCharges','ShippingCharges','Shipping','GiftWrapCharges','GiftWrap','Promotions','Promotion','Discounts']);
+  const allowedCharges=new Set(['ProductCharges','ShippingCharges','Shipping','GiftWrapCharges','GiftWrap','Promotions','Promotion','Discounts','PromoRebates']);
   const fees=new Set(['AmazonFees','DigitalServicesFee','Expenses','Refunded Expenses']);
   const usedIds=new Set();
   const items=(row.items || []).map(item=>{

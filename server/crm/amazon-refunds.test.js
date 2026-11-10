@@ -173,3 +173,12 @@ test('new refund cycles start with one day while keeping the fixed catch-up targ
  await synchronizeAmazonRefunds({db,connection:{id:'connection',amazon_refunds_from:'2026-10-22',amazon_refund_state:{}},now});
  assert.equal(Date.parse(saved.to)-Date.parse(saved.from),86400000);assert.equal(saved.target,'2026-11-10T09:57:00.000Z');
 });
+
+test('shipping promotion reversals offset refunded sales, while Amazon fees remain excluded',()=>{
+ const row=transaction();row.totalAmount=money(-13.99);
+ row.breakdowns=[{breakdownType:'Refunded Sales',breakdownAmount:money(-17.59)},{breakdownType:'Refunded Expenses',breakdownAmount:money(3.6),breakdowns:[{breakdownType:'PromoRebates',breakdownAmount:money(1.09)},{breakdownType:'AmazonFees',breakdownAmount:money(2.42)},{breakdownType:'DigitalServicesFee',breakdownAmount:money(.09)}]}];
+ row.items[0].breakdowns=[{breakdownType:'ProductCharges',breakdownAmount:money(-13.52)},{breakdownType:'Shipping',breakdownAmount:money(-1.09)},{breakdownType:'PromoRebates',breakdownAmount:money(1.09)},{breakdownType:'Tax',breakdownAmount:money(-2.98)},{breakdownType:'AmazonFees',breakdownAmount:money(2.42)},{breakdownType:'DigitalServicesFee',breakdownAmount:money(.09)}];
+ const refund=normalizeRefundTransaction(row,'2026-10-22');assert.equal(refund.parse_error,null);assert.equal(refund.gross,16.5);assert.equal(refund.net,13.52);assert.equal(refund.tax,2.98);
+ const payload=buildRefundCox({...refund,event_id:refund.event_key},{customer,articles,mappings:[]});assert.deepEqual(payload.prezzo,[[1,16.5]]);assert.deepEqual(payload.quantita,[[1,-1]]);
+ row.items[0].breakdowns=row.items[0].breakdowns.filter(b=>b.breakdownType!=='PromoRebates');assert.match(normalizeRefundTransaction(row,'2026-10-22').parse_error,/somma delle righe/);
+});

@@ -126,10 +126,10 @@ test('migration refuses unexpected installed allowlists atomically', { skip: !pr
   } finally { await db.close(); }
 });
 
-test('AI settings exposes only the existing list plus configurable Messaggi without changing defaults', async () => {
+test('AI settings exposes registered modules including Anomalie and Magazzino without changing defaults', async () => {
   const source = await read('../../src/pages/Settings/AISettings.jsx');
   const list = JSON.parse(source.match(/const AI_MODULE_CODES = new Set\((\[[^;]+\])\);/)[1]);
-  assert.deepEqual(new Set(list), new Set(['messaggi', 'attivita', 'prodotti', 'documenti', 'beauty_days', 'ordini_pr', 'ordini_ph', 'ordini_private', 'progremes', 'human_resources', 'hr', 'crm_conto_terzi', 'crm_b2b', 'crm_online']));
+  assert.deepEqual(new Set(list), new Set(['anomalie', 'magazzino', 'messaggi', 'attivita', 'prodotti', 'documenti', 'beauty_days', 'ordini_pr', 'ordini_ph', 'ordini_private', 'progremes', 'human_resources', 'hr', 'crm_conto_terzi', 'crm_b2b', 'crm_online']));
   assert.match(source, /return \{ consentito: false, riconoscimento_immagini: false/);
   assert.match(source, /supabase\.rpc\("admin_ai_effective_access"/);
   assert.doesNotMatch(migration, /\bgrant\s+(?:execute|select|all)\b|\binsert\s+into\b|\bupdate\s+public\./i);

@@ -1,3 +1,4 @@
+import PreparationContentRemoval from './PreparationContentRemoval.jsx';
 import PreparationHistory from './PreparationHistory.jsx';
 import {buildPreparationAuditPdf} from './preparationAuditPdf.js';
 import PreparationPackageEditor from './PreparationPackageEditor.jsx';
@@ -272,6 +273,7 @@ export default function OrderPreparation() {
     [dispatchPreview,setDispatchPreview] = useState(null),
     [editingPackage,setEditingPackage] = useState(null),
     [removingPackage,setRemovingPackage] = useState(null),
+    [removingContent,setRemovingContent] = useState(null),
     [palletSearch,setPalletSearch] = useState(""),
     [reprintOpen,setReprintOpen] = useState(false),
     [completionStatus,setCompletionStatus] = useState(null);
@@ -433,13 +435,14 @@ export default function OrderPreparation() {
         if (saved) {
           response.scan ||= {
             code: saved.code,
-            quantity: saved.quantity,
+            quantity: response.preparation.state.scans.filter(item=>item.operationId===body.eventId || item.id===body.eventId).reduce((sum,item)=>sum+item.quantity,0),
             wrong: !response.preparation.source.lines.some(
               (item) => item.code === saved.code,
             ),
           };
+          const lastScan = response.preparation.state.scans.findLast(item=>item.operationId===body.eventId) || saved;
           const destination = response.preparation.state.packages.find(
-            (item) => item.id === saved.packageId,
+            (item) => item.id === lastScan.packageId,
           );
           setActivePallet(destination.palletId || "");
           if (["carton","pallet"].includes(saved.mode) && !response.scan.wrong) {
@@ -530,10 +533,11 @@ export default function OrderPreparation() {
     }
   }
 
-  const scan = async (value) => {
+  const scan = async (value, units = 1) => {
     if (!canWrite || !activePackage || cartonPrompt) return;
     const response = await perform("scan", {
       barcode: value,
+      units,
       mode,
       palletId: activePallet,
       packageId: activePackage,
@@ -1241,11 +1245,11 @@ export default function OrderPreparation() {
                   </summary>
                     {editable && (
                       <button
-                        className="op-delete-pallet"
-                        disabled={busy || packages.some((p) => p.palletId === b.id)}
-                        onClick={() => void perform("remove_pallet", { palletId: b.id })}
+                        className="op-delete-pallet" aria-label={`Elimina Bancale ${b.number}`}
+                        disabled={busy || !!pending || !!cartonPrompt}
+                        onClick={() => setRemovingContent({operation:"remove_pallet",palletId:b.id,title:`Elimina Bancale ${b.number}`,description:"Verranno eliminati il bancale, tutti i colli e tutte le letture contenute."})}
                       >
-                        Elimina
+                        Elimina Bancale
                       </button>
                     )}
                   {editable && (
@@ -1302,6 +1306,7 @@ export default function OrderPreparation() {
             contextLabel={`Bancale ${pallets.find(item=>item.id===activePallet)?.number || "—"} · Collo ${visiblePackages.find(item=>item.id===activePackage)?.number || "—"}`}
           />}
 
+          {removingContent && editable && <PreparationContentRemoval title={removingContent.title} description={removingContent.description} busy={busy} error={error} onClose={()=>setRemovingContent(null)} onRemove={async reason=>{const result=await perform(removingContent.operation,{palletId:removingContent.palletId,scanId:removingContent.scanId,confirmed:true,reason});if(result && !result.error){setRemovingContent(null);setEditingPackage(null);}}}/>}
           {editingPackage && packages.some(item=>item.id===editingPackage) && editable && <PreparationPackageEditor key={editingPackage} pack={packages.find(item=>item.id===editingPackage)} scans={scans.filter(item=>item.packageId===editingPackage)} busy={busy} error={error} onAction={perform} onSelect={pack=>{choosePackage(pack);setEditingPackage(null);setMode('piece');setCamera(true);}} onClose={()=>setEditingPackage(null)}/>}
           {removingPackage && packages.some(item=>item.id===removingPackage) && editable && <PreparationPackageRemoval key={removingPackage} pack={packages.find(item=>item.id===removingPackage)} quantity={format(scans.filter(scan=>scan.packageId===removingPackage).reduce((n,scan)=>n+scan.quantity,0))} busy={busy} error={error} onClose={()=>setRemovingPackage(null)} onRemove={async reason=>{const result=await perform('remove_package',{packageId:removingPackage,confirmed:true,reason});if(result && !result.error){setRemovingPackage(null);setEditingPackage(null);}}}/>}
           {reprintOpen && <PreparationReprintDialog pallets={pallets} busy={busy} error={error} notice={notice} onPrint={printDocument} onClose={()=>setReprintOpen(false)}/>}
@@ -1354,6 +1359,7 @@ export default function OrderPreparation() {
                   <tr>
                     <th>Prodotto</th>
                     <th>Modalità</th>
+                    <th>Elimina</th>
                     <th>Pezzi</th>
                     <th>Collo</th>
                     <th>Azioni</th>
@@ -1369,6 +1375,7 @@ export default function OrderPreparation() {
                         <td data-label="Modalità">
                           {{piece:"Pezzo",carton:"Collo",pallet:"Bancale"}[s.mode]}
                         </td>
+                        <td data-label="Elimina">{editable && <button type="button" disabled={busy || !!pending} onClick={()=>setRemovingContent({operation:"remove_scan",scanId:s.id,title:"Elimina lettura",description:`Verrà eliminata questa lettura di ${s.code}: ${format(s.quantity)} pezzi.`})}>Elimina lettura</button>}</td>
                         <td data-label="Pezzi">{s.quantity}</td>
                         <td data-label="Collo">
                           {packages.find((p) => p.id === s.packageId)?.number}

@@ -302,23 +302,32 @@ function editPacking(row, operation, body) {
     state.scans = state.scans.filter(s=>s.packageId!==body.packageId);
     state.packages = state.packages.filter((p) => p.id !== body.packageId);
   } else if (operation === "remove_pallet") {
-    assert(
-      !state.packages.some((p) => p.palletId === body.palletId),
-      "Sposta prima i cartoni dal bancale.",
-    );
-    state.pallets = state.pallets.filter((p) => p.id !== body.palletId);
+    assert(state.pallets.some(item=>item.id===body.palletId), 'Bancale non trovato.');
+    const packageIds = new Set(state.packages.filter(item=>item.palletId===body.palletId).map(item=>item.id));
+    if(packageIds.size) {
+      assert(body.confirmed === true, 'Conferma l’eliminazione del bancale e del suo contenuto.');
+      assert(text(body.reason).length>=3 && text(body.reason).length<=1000, 'Indica il motivo dell’eliminazione.');
+    }
+    state.scans = state.scans.filter(item=>!packageIds.has(item.packageId));
+    state.packages = state.packages.filter(item=>!packageIds.has(item.id));
+    state.pallets = state.pallets.filter(item=>item.id!==body.palletId);
   } else if (operation === "reopen_package") {
     const pack = state.packages.find(item => item.id === body.packageId);
     assert(pack, 'Collo non trovato.');
     assert(text(body.reason).length >= 3 && text(body.reason).length <= 1000, 'Indica il motivo della riapertura.');
     pack.closed = false;
-  } else if (operation === "undo" || operation === "remove_quantity") {
+  } else if (operation === "undo" || operation === "remove_quantity" || operation === "remove_scan") {
     const index = state.scans.findIndex((s) => s.id === body.scanId);
     assert(index >= 0, "Lettura non trovata.");
     const scan = state.scans[index];
+    if(operation === 'remove_scan') {
+      assert(body.confirmed === true, 'Conferma l’eliminazione della lettura.');
+      const pack = state.packages.find(item=>item.id===scan.packageId);
+      if(pack) pack.closed=false;
+    }
     assert(!state.packages.find(item => item.id === scan.packageId)?.closed, 'Riapri il collo prima di correggere il contenuto.');
     assert(text(body.reason).length >= 3 && text(body.reason).length <= 1000, 'Indica il motivo della correzione.');
-    const quantity = operation === 'undo' ? scan.quantity : integer(body.quantity, 'Pezzi da rimuovere', 1, scan.quantity);
+    const quantity = operation !== 'remove_quantity' ? scan.quantity : integer(body.quantity, 'Pezzi da rimuovere', 1, scan.quantity);
     if (quantity === scan.quantity) state.scans.splice(index, 1);
     else {
       state.scans[index] = {...scan, quantity: scan.quantity - quantity, corrected: true};
@@ -741,6 +750,7 @@ export function createOrderPreparationHandler({
           "remove_pallet",
           "undo",
           "remove_quantity",
+          "remove_scan",
           "reopen_package",
           "verify",
           "export",
@@ -759,6 +769,7 @@ export function createOrderPreparationHandler({
         );
         assert(["piece", "carton", "pallet"].includes(body.mode), "Modalità non valida.");
 
+        integer(body.units ?? 1, 'Quantità', 1, 10000);
         uuid(body.packageId);
         const product = await barcodeProduct(db, barcode, row.source);
         if (product.excluded) return res.status(200).json({ignored:true,message:`${product.code}: riga informativa, non richiede imballo.`,preparation:exposed(row)});
@@ -788,7 +799,7 @@ export function createOrderPreparationHandler({
           preparation: exposed(row),
           scan: {
             code: product.code,
-            quantity: body.mode === "piece" ? 1 : product.piecesPerCarton * (body.mode === "pallet" ? product.boxesPerPallet : 1),
+            quantity: state.scans.filter(item=>item.operationId===event).reduce((sum,item)=>sum+item.quantity,0),
             wrong: !row.source.lines.some((l) => l.code === product.code),
           },
         });
@@ -803,6 +814,7 @@ export function createOrderPreparationHandler({
           "remove_pallet",
           "undo",
           "remove_quantity",
+          "remove_scan",
           "reopen_package",
         ].includes(op)
       ) {

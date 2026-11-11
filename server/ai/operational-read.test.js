@@ -78,3 +78,28 @@ test('CRM database failures propagate without a successful or empty result', asy
   auth.scoped.rpc = () => Promise.resolve({ data: null, error: failure });
   await assert.rejects(readOperationalData(auth, 'customers', { type: 'b2b', from: '2026-08-04', to: '2026-11-01' }), failure);
 });
+
+test('known CRM argument errors are actionable 400 INVALID_ARGUMENT and never reach RPC',async()=>{
+ let calls=0;
+ const auth={...reader('crm_b2b'),capabilities:{internal_data:true,allowed_modules:['crm_b2b','ordini_ph','ordini_pr']},access:{modules:['crm_b2b','ordini_ph','ordini_pr']},scoped:{rpc(){calls++;throw new Error('RPC must not run');}}};
+ const base={type:'b2b',from:'2026-10-01',to:'2026-10-31',orderModule:'ph',customerGroup:'all',agent:'602.00069',status:'all',offset:0};
+ for(const changed of [{customerGroup:'regular'},{from:'2026-02-30'},{from:'2026-11-01'},{from:'2024-01-01'},{offset:100001},{status:'unknown'},{orderModule:'unknown'},{orderModule:undefined}]){
+  await assert.rejects(readOperationalData(auth,'customers',{...base,...changed}),{status:400,code:'INVALID_ARGUMENT'});
+ }
+ assert.equal(calls,0);
+});
+
+test('corrected PH scope reaches exactly one mocked RPC with original report parameters',async()=>{
+ const auth=reader('crm_b2b');auth.access.modules.push('ordini_ph');auth.capabilities.allowed_modules.push('ordini_ph');let calls=0;
+ auth.scoped.rpc=(name,args)=>{calls++;assert.equal(name,'crm_b2b_order_customer_details');assert.equal(args.p_customer_group,'all');assert.equal(args.p_order_module,'ph');assert.equal(args.p_agent,'602.00069');assert.equal(args.p_from,'2026-10-01');assert.equal(args.p_to,'2026-10-31');return Promise.resolve({data:[]});};
+ await readOperationalData(auth,'customers',{type:'b2b',from:'2026-10-01',to:'2026-10-31',orderModule:'ph',customerGroup:'all',agent:'602.00069',status:'all',offset:0});
+ assert.equal(calls,1);
+});
+test('CRM provider errors are not relabeled as safely retryable argument failures',async()=>{
+ const auth=reader('crm_b2b');const providerError={code:'42501',message:'synthetic provider denial'};
+ auth.scoped.rpc=async()=>({error:providerError});
+ await assert.rejects(readOperationalData(auth,'customers',{type:'b2b',from:'2026-10-01',to:'2026-10-31'}),error=>error===providerError);
+});
+test('HR date validation retains its existing error contract',async()=>{
+ await assert.rejects(readOperationalData(reader('hr'),'hr',{month:'bad'}),error=>error.message.includes('Data non valida')&&error.status===undefined&&error.code===undefined);
+});

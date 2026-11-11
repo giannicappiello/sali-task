@@ -6,8 +6,9 @@ export function canReadModule(auth, modules) {
   if (auth.profile?.ruoli?.amministratore_workspace === true) return modules.some(module => !Array.isArray(auth.capabilities.allowed_modules) || auth.capabilities.allowed_modules.includes(module));
   return modules.some(module => auth.access?.modules?.includes(module) && (!Array.isArray(auth.capabilities.allowed_modules) || auth.capabilities.allowed_modules.includes(module)));
 }
-function day(value) {
-  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value) || !Number.isFinite(Date.parse(value)) || new Date(value).toISOString().slice(0, 10) !== value) throw new Error('Data non valida, usare AAAA-MM-GG.');
+const invalidArgument = message => Object.assign(new Error(message), { status: 400, code: 'INVALID_ARGUMENT' });
+function day(value, invalid = message => new Error(message)) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value) || !Number.isFinite(Date.parse(value)) || new Date(value).toISOString().slice(0, 10) !== value) throw invalid('Data non valida, usare AAAA-MM-GG.');
   return value;
 }
 const denied = () => Object.assign(new Error('Lettura non autorizzata per il profilo e il perimetro AI.'), { status: 403 });
@@ -23,23 +24,23 @@ export async function readOperationalData(auth, operation, input) {
   } else if (operation === 'customers') {
     const module = Object.hasOwn(crmModules, input.type) ? crmModules[input.type] : null;
     if (!module || !canReadModule(auth, [module])) throw denied();
-    const from = day(input.from), to = day(input.to);
-    if (from > to || Date.parse(to) - Date.parse(from) > 366 * 86400000) throw new Error('Scegliere un periodo ordinato di massimo un anno.');
+    const from = day(input.from, invalidArgument), to = day(input.to, invalidArgument);
+    if (from > to || Date.parse(to) - Date.parse(from) > 366 * 86400000) throw invalidArgument('Scegliere un periodo ordinato di massimo un anno.');
     offset = input.offset ?? 0;
-    if (!Number.isSafeInteger(offset) || offset < 0 || offset > 100000) throw new Error('Pagina non valida.');
-    if (!['active', 'inactive', 'all'].includes(input.status || 'active')) throw new Error('Stato cliente non valido.');
+    if (!Number.isSafeInteger(offset) || offset < 0 || offset > 100000) throw invalidArgument('Pagina non valida.');
+    if (!['active', 'inactive', 'all'].includes(input.status || 'active')) throw invalidArgument('Stato cliente non valido.');
     // SQL pagination is mandatory. A PostgREST range neither supplies these
     // function arguments nor replaces pagination inside the function.
     rpc = 'crm_customer_metric_details'; args = { p_crm_type: input.type, p_from: from, p_to: to, p_metric: 'all', p_search: String(input.query || '').slice(0, 160) || null, p_customer_status: input.status || 'active', p_limit: 51, p_offset: offset };
     if (input.orderModule !== undefined) {
-      if (input.type !== 'b2b' || !['prof', 'ph'].includes(input.orderModule)) throw new Error('Perimetro ordini CRM non valido.');
+      if (input.type !== 'b2b' || !['prof', 'ph'].includes(input.orderModule)) throw invalidArgument('Perimetro ordini CRM non valido.');
       if (!canReadModule(auth, [input.orderModule === 'prof' ? 'ordini_pr' : 'ordini_ph'])) throw denied();
       const group = input.customerGroup ?? (input.orderModule === 'prof' ? 'regular' : 'all');
-      if (!['all', 'regular', 'mypharma'].includes(group) || (input.orderModule === 'ph' && group !== 'all')) throw new Error('Gruppo clienti non valido per il modulo ordini.');
+      if (!['all', 'regular', 'mypharma'].includes(group) || (input.orderModule === 'ph' && group !== 'all')) throw invalidArgument('Gruppo clienti non valido per il modulo ordini.');
       rpc = 'crm_b2b_order_customer_details';
       Object.assign(args, { p_order_module: input.orderModule, p_customer_group: group, p_agent: input.agent || null });
     } else if (input.customerGroup !== undefined || input.agent !== undefined) {
-      throw new Error('Specificare orderModule per filtrare gruppo clienti o agente.');
+      throw invalidArgument('Specificare orderModule per filtrare gruppo clienti o agente.');
     }
   } else throw new Error('Operazione non disponibile.');
   // Reuse the same authorization-enforcing RPCs as the product UI, always with the user's JWT.

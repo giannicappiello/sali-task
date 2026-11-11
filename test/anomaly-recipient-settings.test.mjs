@@ -20,7 +20,7 @@ source = source.replace(/import \{ supabase \}[^;]+;/, 'const supabase = { auth:
 const transformed = await transformWithOxc(source, 'RecipientSettings.jsx', { jsx: { runtime: 'automatic' } });
 const code = transformed.code.replace(/(["'])(react(?:\/jsx-runtime)?)\1/g, (_, quote, specifier) => JSON.stringify(pathToFileURL(require.resolve(specifier)).href));
 const { default: Settings } = await import('data:text/javascript;base64,' + Buffer.from(code).toString('base64'));
-const excluded = ['Beauty Consultant', 'Cliente Private', 'Field Force Estero', 'Field Force Farmacia', 'Field Force Professional'];
+const excluded = ['Beauty Consultant', 'Cliente Private', 'Field Force Estero', 'Field Force Farmacia', 'Field Force Farmacie', 'Field Force Professional'];
 const users = [{ id: 'a', nome: 'Anna', cognome: 'Rossi', email: 'anna@example.test' }, { id: 'b', nome: 'Bruno', cognome: 'Verdi', email: 'bruno@example.test' }];
 
 test('additional recipients start empty, require explicit addition, support removal and submit only chosen IDs', async () => {

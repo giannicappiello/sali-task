@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { anomalyEmail,buildEmailJobs,claimAnomalyEmail,anomalyEmailAction,anomalyWorkerReady,dispatchAnomalyEmails,enqueueAnomalyEmails,verifyAnomalyReadiness,authorizedRecipients } from './delivery.js';
 
 test('excluded commercial departments never resolve managers or saved overrides; production managers remain eligible', async () => {
- const names = [' Beauty   Consultant ', 'CLIENTE PRIVATE', 'Field Force Estero', 'Field Force Farmacia', 'Field Force Professional', 'Produzione'];
+ const names = [' Beauty   Consultant ', 'CLIENTE PRIVATE', 'Field Force Estero', 'Field Force Farmacie', 'Field Force Professional', 'Produzione'];
  const departments = names.map((nome, i) => ({ id: `d${i}`, nome }));
  const users = names.map((_, i) => ({ id: `m${i}`, auth_user_id: `auth${i}`, attivo: true, email: `m${i}@example.test` }));
  const memberships = departments.map((d, i) => ({ reparto_id: d.id, utente_id: `member${i}` }));

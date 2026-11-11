@@ -3,6 +3,7 @@ const excludedDepartments = new Set([
  'cliente private',
  'field force estero',
  'field force farmacia',
+ 'field force farmacie',
  'field force professional',
 ]);
 

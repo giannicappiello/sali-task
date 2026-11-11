@@ -1,70 +1,71 @@
 PROGRE AI — FABBISOGNI & PLANNING
-Implementation state, 10 November 2026
+Implementation and release state, 11 November 2026
 
-Workspace base: 4499e9f5592c1073b451444ba849b3a7844bc3fd
-MES audited base: 2d82689 (origin/main, fetched 10 November 2026).
+Scope
+- Daily 07:00 Europe/Rome check over the next 28 days.
+- Email is text-only. Findings and source coverage gaps go in the message body;
+  this agent does not generate or attach PDFs.
+- Read-only against MES, Mexal and Workspace. No automatic planning, order,
+  reservation, lot, inventory or production writes.
+- Any service activation remains a manual Workspace BRAIN_REVIEW proposal.
 
-Implemented
-- Independent area and module Anomalie, existing department/module catalog integration.
-- Central extensible agent registry, severity/category/owner/status/deadline, evidence,
-  comments, immutable event audit, optimistic versions, deduplication per agent/fingerprint.
-- Source module authorization, explicit area AND module checks, owner/department scope,
-  RLS on all new tables; no user/role/department grants are assigned by the migration.
-- Manual BRAIN_REVIEW through the existing brain proposal channel for management,
-  task links and recipient configuration. No order/planning execution is added.
-- Existing task links validate current task scope and activity module authorization.
-- Dashboard and paginated register/history, direct Workspace record links.
-- ChatGPT tools ANOMALIES_READ, ANOMALY_HISTORY, ANOMALY_AGENT_STATUS,
-  ANOMALY_UPDATE, ANOMALY_CONFIGURE, without model API calls.
-- Deterministic 28-day rules for BOM, materials, external commitments, purchase
-  requirements/orders/dates, yesterday receipts/quality, capacity and dependency cascades.
-- Physical stock/movement reconciliation requires verified warehouse/article/UM/lot,
-  semantics, event identity, signed quantities and synchronization coverage. Accounting
-  differences and available-vs-physical differences are never classified as stock errors.
-- DST-aware 07:00 Europe/Rome scheduler, atomic daily run ingestion, no uncertain retries.
-- Dynamic recipient resolver: department members' unique existing responsible person,
-  both active Workspace administrators (live audit count: 2), configurable department
-  overrides and additional users; deduplicated email addresses. Ambiguity blocks delivery.
-- Dedicated planning read gate for authorized company-wide scopes, independent of write.
-  Restricted scopes fail closed until MES supplies an authoritative row mapping.
-- MES companion change adds lot, Mexal lot ID, UM, physical basis, source timezone and
-  read timestamp to inventory. It deliberately does not invent a synchronization watermark.
+Implemented in the local Workspace checkout
+- Independent Anomalie area and module, central register, categories, severity,
+  owner/status, evidence, comments, event history, deduplication and audit.
+- Existing area/module/source checks, RLS and scoped register access.
+- Dashboard, paginated register/history, direct Workspace links, AI read tools and
+  BRAIN_REVIEW proposals for anomaly management and recipient configuration.
+- Deterministic 28-day checks for BOM/materials, external commitments, requirements,
+  supplier orders and dates, receipts/quality, resource capacity and cascades.
+- Mexal/MES/Workspace stock reconciliation retains warehouse, article, UM, lot,
+  signed quantity, timestamp and synchronization evidence. Unknown synchronization
+  cutoffs and non-comparable quantities remain explicit gaps, never assumed errors.
+- Default source adapter, deterministic text-email composer, scoped dynamic recipient
+  checks, email deduplication ledger, isolated Aruba anomaly queue protocol and a
+  readiness check. Claims become uncertain before SMTP handoff; ambiguous sends are
+  not retried automatically.
+- Recipient settings expose a readiness check and a manual activation proposal.
+  Readiness alone never enables the agent.
+- MES checkout contains the read-only Fabbisogni source endpoint and inventory
+  reconciliation dimensions. Its targeted Workspace read API tests pass locally.
 
-Not implemented or not activated
-- Production loadSnapshot adapter normalizing all nine input sources is NOT installed.
-  The scheduler has no default source loader and cannot execute a real daily analysis.
-- PDF generation from the exact Word master, field/TOC refresh, rendering QA and
-  recipient-specific PDF delivery are NOT wired. No generic PDF substitutes the master.
-- anomaly_deliveries is a protected deduplication ledger only; no delivery dispatcher
-  or notification queue producer is connected. No email or notification has been sent.
-- The MES companion change requires its own reviewed release/install and live read test.
-- Source synchronization watermarks and canonical cross-system movement mappings
-  remain unavailable; data update timestamps cannot substitute for them.
-- Agent enabled=false, readiness.ready=false. Manual activation is rejected while false.
-- No management order, material reservation, lot, production or planning change was
-  applied during testing. All tests use isolated data and mocked transports.
+Verified locally
+- Workspace: 40 anomaly/email tests pass; production frontend build succeeds.
+- MES: 23 WorkspaceReadOnlyApiTests pass. A broader planning suite has one separate
+  existing failure, `WorkspaceOrderListTests.In_production_tab_requires_a_phase_that_is_really_running`.
+- PHP CLI is not installed in this environment, so `worker.php` syntax and its direct
+  PHP test file could not be executed here.
 
-Report master required by Progre
-Template_Modello.docx SHA256 df5d359c7bbd169f5b9067f5cd50b4a0f78720cc811ff1f1f463b611764d1249
-Template_Istruzioni.docx SHA256 53e9023768a7337f3bc3df8e381ba06e09432ab39d72523205e5d440379efe22
-Preserve master cover/header/footer/styles/automatic TOC, update fields with a document
-engine, export and visually verify every page before storing a sendable PDF.
+Production status — NOT ACTIVE
+- Supabase project `eteyjxybcyrvuxifkrbm` has the base anomaly registry and additive
+  email delivery migrations. Live `anomaly_deliveries` now has the six queue fields,
+  and the email queue/claim/finish functions are present. The agent remains
+  `enabled=false`; live readiness is false (`emailReady=false`).
+- The local Workspace changes are uncommitted on branch `feat/anomalie-fabbisogni`;
+  production Vercel serves the earlier main deployment. The existing production
+  release script also runs `supabase db push`, so it is unsafe to invoke after the
+  migration was applied through the connector until local and live migration history
+  are reconciled.
+- The production scheduler owner variable is configured, but requires a later
+  code deployment to take effect. Aruba worker and MES read-only endpoint have not
+  been verified as published/reachable. No PHP CLI or Vercel CLI is installed here.
+- In-app notifications are not wired; current delivery is email-only.
+- No email has been sent and no production planning, order or inventory change was made.
+- Movement synchronization watermarks and complete receipt-to-lot linkage remain
+  unavailable; reports must continue to disclose these gaps.
 
-Validation commands
-node --test server/anomalies/*.test.js server/ai/planning-lifecycle.test.js server/second-brain/handler.test.js server/second-brain/read-coverage.test.js server/progremes-readonly-client.test.js
-node node_modules/eslint/bin/eslint.js server/anomalies src/pages/Anomalies server/ai/planning-lifecycle.js server/progremes-readonly-client.js src/App.jsx
-npm run build
-Isolated database tests use the existing .tmp/hr-test-runtime PGlite installation.
-MES: dotnet test Tests/Planning/ProgreMES.APS.Planning.Tests.csproj --filter FullyQualifiedName~WorkspaceReadOnlyApiTests
+Remaining release gates
+1. Publish Workspace source to the Git-linked Vercel production project without
+   re-running Supabase migrations; verify the READY deployment and authenticated probes.
+2. Publish the MES endpoint and Aruba text-only email worker; validate authenticated
+   read-only source and delivery capability probes.
+3. Confirm the scheduled owner's live identity and scoped permissions; run the source
+   readiness check and a non-sending end-to-end fixture, checking deduplication,
+   queue claim/completion, and all reconciliation coverage gaps.
+4. Present the exact recipient configuration and activation as Workspace BRAIN_REVIEW.
+   Only a human may approve it. Verify enabled state, first scheduled run and persisted
+   text-email ledger afterward.
 
-Release gates before activation
-1. Install/test the MES read contract and all normalized read-only source adapters.
-2. Verify authoritative snapshots, physical/available semantics, movement mappings,
-   synchronization cutoffs, department mappings and source permissions.
-3. Install deterministic Progre Word-to-PDF rendering with field refresh and full QA.
-4. Integrate individual scoped report/email and notification delivery with the existing
-   transport, leases and accepted/delivered/uncertain statuses; no uncertain resend.
-5. Verify each dynamic recipient's active identity, source permissions and report scope.
-6. Test the complete flow with non-delivering fixtures, then present a specific activation
-   proposal for manual BRAIN_REVIEW in Workspace. Do not set readiness to true merely
-   because a code build, role check, migration or cron deployment succeeded.
+Do not call the service operational until production code, migrations, MES endpoint,
+Aruba worker, readiness, manual BRAIN_REVIEW and the first scheduled run/email have all
+been verified in persisted state.

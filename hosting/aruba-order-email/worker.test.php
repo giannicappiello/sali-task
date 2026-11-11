@@ -19,7 +19,7 @@ function verify(bool $ok, string $message): void
 function apiRequest(array $config, array $payload): array
 {
     $GLOBALS['calls'][] = $payload;
-    if (($GLOBALS['fail_ack'] ?? false) && $payload['action'] === 'accepted') throw new RuntimeException('private body');
+    if (($GLOBALS['fail_ack'] ?? false) && in_array($payload['action'], ['accepted', 'complete'], true)) throw new RuntimeException('private body');
     if ($payload['action'] === 'claim') return $GLOBALS['claim'];
     if ($payload['action'] === 'attachment') {
         verify($payload['report_artifact_key'] === 'group:ph', 'wrong artifact key');
@@ -155,3 +155,27 @@ verify($legacy['to'] === 'Legacy@example.test', 'legacy address changed');
 verify(!str_contains($legacy['headers'], 'Cc:'), 'legacy has unexpected Cc');
 verify(str_contains($source, "'activity_email_protocol' => 1, 'activity_email_protocols' => [1, 2]"), 'update-first capability missing');
 echo "PASS: v2 To/Cc, legacy compatibility, invalid and duplicate recipients, no Bcc, lost-ack safety.\n";
+
+$GLOBALS['claim'] = ['status'=>'claimed', 'worker_id'=>'anomaly-worker', 'email'=>[
+    'id'=>'anomaly:33333333-3333-4333-8333-333333333333', 'lock_token'=>'44444444-4444-4444-8444-444444444444',
+    'destinatario'=>'manager@example.test', 'oggetto'=>'Criticità Progre', 'corpo'=>"Criticità in testo semplice\nNessun allegato.",
+], 'attachments'=>[]];
+foreach (['success', 'rejected', 'ambiguous', 'lost_ack'] as $scenario) {
+    $GLOBALS['send_reject'] = $scenario === 'rejected';
+    $GLOBALS['send_throw'] = $scenario === 'ambiguous';
+    $GLOBALS['fail_ack'] = $scenario === 'lost_ack';
+    $GLOBALS['calls'] = $GLOBALS['sent'] = [];
+    $result = processOne($config, false, false, true);
+    $expected = $scenario === 'success' ? 'sent' : ($scenario === 'rejected' ? 'failed' : 'uncertain');
+    verify($result['status'] === $expected, 'wrong anomaly outcome: ' . $scenario);
+    verify($GLOBALS['calls'][0]['anomaly_only'] === true, 'anomaly queue was not isolated');
+    verify(count($GLOBALS['sent']) === 1, 'anomaly email sent repeatedly');
+    verify(!str_contains($GLOBALS['sent'][0]['body'], 'Content-Disposition: attachment'), 'anomaly email has attachment');
+    verify(end($GLOBALS['calls'])['action'] === ($scenario === 'success' ? 'complete' : 'retry'), 'wrong anomaly acknowledgement');
+}
+$GLOBALS['send_reject'] = $GLOBALS['send_throw'] = $GLOBALS['fail_ack'] = false;
+$GLOBALS['claim']['attachments'] = [['filename'=>'unexpected.pdf', 'base64'=>base64_encode('%PDF')]];
+$GLOBALS['calls'] = $GLOBALS['sent'] = [];
+$result = processOne($config, false, false, true);
+verify($result['status'] === 'failed' && count($GLOBALS['sent']) === 0, 'anomaly attachment was not rejected');
+echo "PASS: isolated anomaly queue, text-only delivery, no attachments, definitive failure and uncertain-send deduplication.\n";

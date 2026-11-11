@@ -121,6 +121,21 @@ nelle caselle. Esiti ambigui o acknowledgements persi restano `uncertain` e non
 vengono ripetuti automaticamente. Anche l'accettazione SMTP parziale dei
 To/CC è `uncertain`, per evitare duplicati ai destinatari già accettati.
 
+## Anomalie: report Fabbisogni solo testo
+
+Il worker espone `GET ?action=anomaly_email_capabilities`, che dichiara il
+protocollo dedicato, la coda attiva, il mittente configurato e l'assenza di
+allegati. `POST {"action":"run_anomalies"}` lavora esclusivamente le email
+testuali della coda Anomalie e usa `anomaly_only: true` nel claim Workspace; non
+consuma le code ordini, DDT o report commerciali. Il payload con allegati o BCC
+viene rifiutato prima dell'invio. Se l'esito SMTP o la conferma backend è ambiguo,
+la consegna resta `uncertain` e non viene ripetuta automaticamente.
+
+Il worker aggiornato è compatibile con le code esistenti; per abilitare il nuovo
+flusso occorre però prima applicare la migrazione incrementale Anomalie e
+pubblicare il backend Workspace. Il controllo GET non preleva né invia email.
+Non eseguire `run_anomalies` come test: elabora la coda reale.
+
 Test locali senza configurazione, rete né invii reali:
 
 ```sh

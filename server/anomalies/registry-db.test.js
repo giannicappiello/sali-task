@@ -9,8 +9,10 @@ test('isolated Postgres: RLS, sources, area+module, proposals, audit and optimis
  await db.exec(`create role anon; create role authenticated; create role service_role; create schema auth;
  create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
  grant usage on schema auth to authenticated;
- create table utenti(id uuid primary key,auth_user_id uuid,attivo boolean default true);
- create table reparti(id uuid primary key); create table utenti_reparti(utente_id uuid,reparto_id uuid);
+ create table utenti(id uuid primary key,auth_user_id uuid,attivo boolean default true,email text,reparto_id uuid,responsabile_utente_id uuid);
+ alter table utenti add column ruolo_id uuid;
+ create table ruoli(id uuid primary key,amministratore_workspace boolean default false);
+ create table reparti(id uuid primary key,attivo boolean default true); create table utenti_reparti(utente_id uuid,reparto_id uuid);
  create table v4_fasi_progetto(id uuid primary key,creato_da uuid,assegnato_a uuid);
  create function club_external_identity() returns boolean language sql stable as $$ select false $$;
  create function workspace_customer_record_scope() returns boolean language sql stable as $$ select false $$;
@@ -24,7 +26,7 @@ test('isolated Postgres: RLS, sources, area+module, proposals, audit and optimis
  create table permessi(codice text primary key,descrizione text,modulo text);
  create table test_grants(user_id uuid,area boolean,module boolean,sources boolean,manage boolean);
  create function workspace_current_profile_id() returns uuid language sql stable as $$ select auth.uid() $$;
- create function workspace_user_is_admin() returns boolean language sql stable as $$ select coalesce(current_setting('test.admin',true),'false')='true' $$;
+ create function workspace_user_is_admin(target_auth_user_id uuid default null) returns boolean language sql stable as $$ select coalesce((select r.amministratore_workspace from utenti u join ruoli r on r.id=u.ruolo_id where u.auth_user_id=coalesce(target_auth_user_id,auth.uid()) and u.attivo is not false limit 1),coalesce(current_setting('test.admin',true),'false')='true') $$;
  create function workspace_area_access_codes(p uuid) returns text[] language sql stable security definer as $$ select case when area then array['anomalie'] else array[]::text[] end from test_grants where user_id=p $$;
  create function workspace_module_enabled_for_user(p uuid,m text) returns boolean language sql stable security definer as $$ select case when m='anomalie' then module else sources end from test_grants where user_id=p $$;
  create function workspace_screen_level_for_user(p uuid,s text) returns text language sql stable as $$ select 'scrittura'::text $$;
@@ -38,11 +40,12 @@ test('isolated Postgres: RLS, sources, area+module, proposals, audit and optimis
  create policy own on second_brain_proposals to authenticated using(user_id=auth.uid()) with check(user_id=auth.uid());
  grant select,insert,update on second_brain_proposals to authenticated;
  create function second_brain_decide(p_id uuid,p_confirm boolean) returns second_brain_proposals language sql security invoker as $$ select * from second_brain_proposals where id=p_id $$;
- insert into utenti values('${member}','${member}',true),('${outsider}','${outsider}',true);
+ insert into utenti(id,auth_user_id,attivo,email) values('${member}','${member}',true,'member@example.test'),('${outsider}','${outsider}',true,'outsider@example.test');
  insert into reparti values('${dept}'); insert into utenti_reparti values('${member}','${dept}');
  insert into test_grants values('${member}',true,true,true,true),('${outsider}',true,true,true,true);`);
  const migration = await readFile(new URL('../../supabase/migrations/20261110193548_anomaly_registry.sql', import.meta.url), 'utf8');
  await db.exec(migration);
+ await db.exec(await readFile(new URL('../../supabase/migrations/20261110213000_anomaly_email_delivery.sql', import.meta.url), 'utf8'));
  const a = (await db.query(`insert into anomalies(agent_code,fingerprint,category,severity,title,description,department_id,source_modules)
  values('fabbisogni',repeat('a',64),'test','high','Test','Test','${dept}',array['progremes']) returning id`)).rows[0].id;
  const asUser = async user => db.exec(`reset role; select set_config('request.jwt.claim.sub','${user}',false); set role authenticated;`);
@@ -57,6 +60,7 @@ test('isolated Postgres: RLS, sources, area+module, proposals, audit and optimis
  assert.equal((await db.query('select version from anomalies')).rows[0].version, 2);
  assert.equal((await db.query('select * from anomaly_events')).rows.length, 3);
  await assert.rejects(db.query('select second_brain_decide($1,true)', [q.id]), /RECORD_CHANGED/);
+ await asUser(member);await assert.rejects(db.query("select anomaly_set_readiness($1,'{}'::jsonb)",[member]),/permission denied/);await db.exec('reset role');
  await db.exec(`reset role; update test_grants set sources=false where user_id='${member}'; set role authenticated;`); assert.equal((await db.query('select * from anomalies')).rows.length, 0);
  await db.exec(`reset role; update test_grants set sources=true,area=false where user_id='${member}'; set role authenticated;`); assert.equal((await db.query('select * from anomalies')).rows.length, 0);
  await db.exec(`reset role; update test_grants set area=true,module=false where user_id='${member}'; set role authenticated;`); assert.equal((await db.query('select * from anomalies')).rows.length, 0);
@@ -71,10 +75,21 @@ test('isolated Postgres: RLS, sources, area+module, proposals, audit and optimis
  await assert.rejects(db.query('select second_brain_decide($1,true)', [activate.id]), /AGENT_NOT_READY/);
  assert.equal((await db.query('select enabled from anomaly_agents')).rows[0].enabled, false);
  await db.exec('reset role');
- const finding = { agent_code: 'fabbisogni', fingerprint: 'b'.repeat(64), category: 'material', severity: 'high', title: 'Materiale', description: 'Test', department_id: dept, source_modules: ['progremes'], evidence: {} };
+ const finding = { agent_code: 'fabbisogni', fingerprint: 'b'.repeat(64), category: 'material', severity: 'high', title: 'Materiale', description: 'Test', department_id: dept, source_modules: ['progremes','magazzino'], evidence: {} };
  const record = async () => (await db.query("select (anomaly_record_run('2026-11-10','incomplete','{}',$1)).*", [[finding]])).rows[0];
  const run1 = await record(), run2 = await record(); assert.equal(run1.id, run2.id);
  assert.equal((await db.query("select count(*)::int n from anomalies where fingerprint=repeat('b',64)")).rows[0].n, 1);
  assert.equal((await db.query('select count(*)::int n from anomaly_runs')).rows[0].n, 1);
+ await db.exec(`reset role; insert into ruoli(id,amministratore_workspace) values('00000000-0000-4000-8000-000000000004',true); update utenti set ruolo_id='00000000-0000-4000-8000-000000000004' where id='${member}'; update anomaly_agents set readiness='{"ready":true,"emailReady":false}' where code='fabbisogni';`);
+ await assert.rejects(db.query("update anomaly_agents set enabled=true where code='fabbisogni'"),/AGENT_NOT_READY/);
+ await db.exec(`update anomaly_agents set enabled=true,readiness='{"ready":true,"emailReady":true}' where code='fabbisogni';`);
+ const job={recipient_id:member,recipient_email:'member@example.test',scope_department_ids:[dept],channel:'email',subject:'Criticità',body:'Solo testo, senza PDF.',content_hash:'c'.repeat(64)};
+ assert.equal((await db.query('select anomaly_queue_email($1,$2,$3) n',[member,run1.id,JSON.stringify([job])])).rows[0].n,1);
+ assert.equal((await db.query('select anomaly_queue_email($1,$2,$3) n',[member,run1.id,JSON.stringify([job])])).rows[0].n,0);
+ const queued=(await db.query("select * from anomaly_deliveries where run_id=$1",[run1.id])).rows[0];assert.equal(queued.status,'pending');assert.equal(queued.body,'Solo testo, senza PDF.');
+ const claimed=(await db.query("select * from anomaly_claim_email('test-worker')")).rows[0];assert.equal(claimed.status,'uncertain');
+ assert.equal((await db.query("select count(*)::int n from anomaly_claim_email('second-worker')")).rows[0].n,0);
+ assert.equal((await db.query("select anomaly_finish_email($1,'test-worker',$2,'accepted','message-1') ok",[claimed.id,claimed.lock_token])).rows[0].ok,true);
+ assert.equal((await db.query("select status from anomaly_deliveries where id=$1",[claimed.id])).rows[0].status,'accepted');
  } finally { await db.close(); }
 });

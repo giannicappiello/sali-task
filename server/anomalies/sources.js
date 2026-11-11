@@ -84,8 +84,9 @@ export function analyzeControlSource(source,{workspaceStock=[],mexal=null,depart
  const warnings=source.purchasing.warnings||[];
  if(warnings.length)gap('bom',warnings.slice(0,10).join(' · '));else ok('bom');
  for(const id of plannedIds)if(!demands.some(d=>d.productionOrderId===id)){add('bom','high',id,'Formula o distinta dei materiali non verificabile per la lavorazione pianificata',{jobId:id},departmentFor(id));gap('bom','Una o più lavorazioni pianificate non hanno materiali verificabili.');}
- const allEvaluated=new Set(demands.map(d=>d.productionOrderId));
- for(const r of source.reservations)if(!plannedIds.has(r.orderId)&&allEvaluated.has(r.orderId)&&numeric(r.quantity))stocks.set(r.articleId,Math.max(0,(stocks.get(r.articleId)||0)-r.quantity));
+ // MES contract v4 already excludes reservations outside its evaluated orders.
+ // All evaluated demands below consume this balance once, including unplanned
+ // orders: subtracting their reservations here would count the same demand twice.
  ok('stock');ok('purchaseOrders');ok('requirements');
  const supplies=source.purchasing.arrivals||[],byArticle=new Map();
  for(const demand of demands){if(!numeric(demand.quantity)||demand.quantity<0||!demand.unitOfMeasure){gap('bom','Quantità o UM mancante nella distinta.');continue;}const group=byArticle.get(demand.articleId)||[];group.push(demand);byArticle.set(demand.articleId,group);}
@@ -117,7 +118,8 @@ export function analyzeControlSource(source,{workspaceStock=[],mexal=null,depart
  for(let i=0;i<intervals.length;i++)for(let j=i+1;j<intervals.length&&intervals[j].start<intervals[i].end;j++)if(intervals[i].resourceId===intervals[j].resourceId&&intervals[i].orderId!==intervals[j].orderId)add('capacity','high',[intervals[i].resourceId,intervals[i].orderId,intervals[j].orderId,day(intervals[i].start)],'Sovrapposizione di lavorazioni sulla stessa risorsa',{first:intervals[i],second:intervals[j]},departmentFor(intervals[i].orderId));
  if(!mexal)gap('movements','Lettura diretta Mexal non disponibile.');else if(mexal.movementGap)gap('movements',mexal.movementGap);else ok('movements');
  const receipts=[];if(mexal&&!mexal.movementGap){for(const row of mexal.movements){try{const movement=inventoryMovement(row);if(movement.date!==window.yesterday.replaceAll('-',''))continue;for(const effect of movement.effects)if(effect.field==='carico'&&effect.amount>0n)receipts.push({article:row.codice_articolo,warehouse:effect.warehouse,quantity:Number(effect.amount)/1e6,document:[row.sigla,row.serie,row.numero].join('/'),lot:null});}catch(e){gap('movements',e.message);}}
-  coverage.receipts={complete:true,readAt:mexal.readAt,reason:`${receipts.length} righe di ricevimento fisico del giorno precedente; lotti e qualità richiedono collegamento documentale.`};
+  if(coverage.movements.complete)coverage.receipts={complete:true,readAt:mexal.readAt,reason:`${receipts.length} righe di ricevimento fisico del giorno precedente; lotti e qualità richiedono collegamento documentale.`};
+  else gap('receipts','Uno o più movimenti non sono interpretabili; i ricevimenti acquisiti sono parziali.');
   for(const receipt of receipts)add('receipt_quality','warning',[receipt.document,receipt.article,receipt.warehouse],'Ricevimento di ieri: verificare lotto e rilascio qualità',receipt);
  }else gap('receipts','Ricevimenti del giorno precedente non verificabili senza movimenti Mexal completi.');
  // All three source projections are retained. Do not equate aggregated Workspace
@@ -134,7 +136,8 @@ export function analyzeControlSource(source,{workspaceStock=[],mexal=null,depart
  }}
  gap('stock_reconciliation','Confronto delle tre fonti acquisito; mancano un cutoff transazionale comune e il dettaglio lotto Workspace. Le differenze sono da verificare, non errori contabili presunti.');
  const affected=new Set(findings.filter(x=>['material_shortage','quality_block','capacity'].includes(x.category)).map(x=>x.evidence.jobId??x.evidence.first?.orderId).filter(Boolean));
- for(const task of tasks){const previous=rawTasks.find(t=>t.id===task.previousTaskId);if(previous&&affected.has(previous.orderId)&&!affected.has(task.orderId)){affected.add(task.orderId);add('cascade','warning',[previous.orderId,task.orderId],'Possibile impatto da una lavorazione precedente',{jobId:task.orderId,predecessor:previous.orderId},departmentFor(task.orderId));}}
+ let changed=true;
+ while(changed){changed=false;for(const task of tasks){const previous=rawTasks.find(t=>t.id===task.previousTaskId);if(previous&&affected.has(previous.orderId)&&!affected.has(task.orderId)){affected.add(task.orderId);changed=true;add('cascade','warning',[previous.orderId,task.orderId],'Possibile impatto da una lavorazione precedente',{jobId:task.orderId,predecessor:previous.orderId},departmentFor(task.orderId));}}}
  for(const g of gaps)add('data_unavailable','warning',g.source,'Controllo con dati da verificare: '+g.source,{source:g.source,reason:g.reason});
  return {window,status:gaps.length?'incomplete':'complete',findings,coverage,gaps,reconciliation,receipts,plannedOrders:plannedIds.size,departmentIds:departments.map(x=>x.id),evidenceHash:digest({source,workspaceStock,mexal}),policyVersion:POLICY.version};
 }

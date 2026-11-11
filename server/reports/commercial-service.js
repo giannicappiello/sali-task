@@ -56,12 +56,12 @@ export async function triggerMonthlyReports(db,{now=new Date(),fetchImpl=fetch,s
   }
   const delivery=dueBatches.length?{status:'dispatch_requested',batchIds:dueBatches.map(batch=>batch.id),dispatch:await dispatch(fetchImpl)}:null;
   if(!timing.due)return delivery||{status:'not_due'};
-  const recipients=await loadReportRecipients(db);await workerReady(fetchImpl);
   const previous=must(await db.from('commercial_report_batches').select('id,status').eq('period',timing.period).maybeSingle());
   if(previous) {
     if(delivery)return delivery;
     return {status:'already_triggered',batchId:previous.id,batchStatus:previous.status};
   }
+  const recipients=await loadReportRecipients(db);await workerReady(fetchImpl);
   const batch={id:randomUUID(),period:timing.period,owner_id:settings.owner_id,policy_hash:POLICY_HASH,status:'triggering',delivery_day:settings.delivery_day??10,manifest:buildReportManifest(recipients).targets,recipients_hash:recipientsFingerprint(recipients)};
   const inserted=await db.from('commercial_report_batches').insert(batch);
   if(inserted.error?.code==='23505')return {status:'already_triggered'};

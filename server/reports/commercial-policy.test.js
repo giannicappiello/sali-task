@@ -15,7 +15,8 @@ test('late delivery remains due across days, months and years, and never starts 
   assert.equal(reportDeliveryDue('2026-12-01',new Date('2027-01-02T09:00:00Z'),2),true);
   assert.equal(reportPeriod(new Date('2026-12-01T08:00:00Z'),2).due,true);
   assert.equal(reportPeriod(new Date('2026-12-02T09:00:00Z'),2).deliveryDue,true);
-  assert.equal(reportPeriod(new Date('2026-12-10T09:00:00Z'),2).due,false);
+  assert.equal(reportPeriod(new Date('2026-12-10T09:00:00Z'),2).due,true);
+  assert.equal(reportPeriod(new Date('2026-12-11T09:00:00Z')).due,true);
   assert.throws(()=>reportDeliveryDue('2026-10-31',new Date()),/Mese report/);
 });
 test('Rome 10:00 follows winter and summer time, with previous-month rollover',()=>{

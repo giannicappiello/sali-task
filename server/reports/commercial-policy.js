@@ -23,7 +23,7 @@ export function reportPeriod(now=new Date(),deliveryDay=10) {
   requireThat([2,10].includes(deliveryDay),'Giorno invio report non valido.');
   const parts=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Rome',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(now).map(p=>[p.type,p.value]));
   const previous=new Date(Date.UTC(Number(parts.year),Number(parts.month)-2,1));
-  return {due:[deliveryDay-1,deliveryDay].includes(Number(parts.day))&&['09','10'].includes(parts.hour),deliveryDue:Number(parts.day)===deliveryDay&&parts.hour==='10',period:previous.toISOString().slice(0,10),month:previous.toLocaleString('it-IT',{month:'long',year:'numeric',timeZone:'UTC'})};
+  return {due:Number(parts.day)>=deliveryDay-1&&['09','10'].includes(parts.hour),deliveryDue:Number(parts.day)===deliveryDay&&parts.hour==='10',period:previous.toISOString().slice(0,10),month:previous.toLocaleString('it-IT',{month:'long',year:'numeric',timeZone:'UTC'})};
 }
 export function subject(period) {
   requireThat(/^\d{4}-\d{2}-01$/.test(period),'Mese report non valido.');

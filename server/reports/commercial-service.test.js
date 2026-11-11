@@ -94,7 +94,7 @@ test('late PDF finalization schedules delivery on the 11th and in subsequent mon
 
 test('daily recovery dispatches old queued batches without creating a new run',async()=>{
  const f=fixture();f.batch.status='queued';let dispatched=0;
- const result=await triggerMonthlyReports(f.db,{now:new Date('2026-12-11T09:00:00Z'),dispatch:async()=>{dispatched++;return {status:'dispatch_completed'};},fetchImpl:()=>{throw Error('must not trigger agent');}});
+ const result=await triggerMonthlyReports(f.db,{now:new Date('2026-11-11T09:00:00Z'),dispatch:async()=>{dispatched++;return {status:'dispatch_completed'};},fetchImpl:()=>{throw Error('must not trigger agent');}});
  assert.equal(result.status,'dispatch_requested');assert.deepEqual(result.batchIds,['batch']);
  assert.equal(dispatched,1);assert.equal(f.db.tables.commercial_report_batches.length,1);
  f.db.tables.commercial_report_settings[0].enabled=false;

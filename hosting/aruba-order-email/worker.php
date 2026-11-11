@@ -41,7 +41,7 @@ function requireHttpAuthorization(array $config): void
         return;
     }
     $readCapabilities = $_SERVER['REQUEST_METHOD'] === 'GET'
-        && in_array(($_GET['action'] ?? ''), ['report_capabilities', 'activity_email_capabilities'], true);
+        && in_array(($_GET['action'] ?? ''), ['report_capabilities', 'activity_email_capabilities', 'anomaly_email_capabilities'], true);
     if ($_SERVER['REQUEST_METHOD'] !== 'POST' && !$readCapabilities) {
         respond(['error' => 'Metodo non consentito.'], 405);
     }
@@ -254,9 +254,49 @@ function processActivityClaim(array $config, array $claimed): array
     }
 }
 
-function processOne(array $config, bool $reportsOnly = false, bool $activityOnly = false): array
+function processAnomalyClaim(array $config, array $claimed): array
 {
-    $claimed = apiRequest($config, ['action' => 'claim', 'shipment_protocol' => 1, 'report_protocol' => 1, 'reports_only' => $reportsOnly, 'activity_email_protocol' => 1, 'activity_email_protocols' => [1, 2], 'activity_only' => $activityOnly]);
+    $email = $claimed['email'] ?? [];
+    $identity = ['email_id' => $email['id'] ?? '', 'worker_id' => $claimed['worker_id'] ?? '',
+        'lock_token' => $email['lock_token'] ?? ''];
+    $attempted = false;
+    $definitive = false;
+    try {
+        if (!str_starts_with((string)$identity['email_id'], 'anomaly:')
+            || trim((string)$identity['worker_id']) === '' || trim((string)$identity['lock_token']) === ''
+            || !empty($claimed['attachments']) || array_key_exists('bcc', $email)
+            || array_key_exists('bcc_recipients', $email)
+            || !is_string($email['destinatario'] ?? null)
+            || !is_string($email['oggetto'] ?? null) || !is_string($email['corpo'] ?? null)
+            || strlen($email['corpo']) > 20000) {
+            throw new RuntimeException('Invalid anomaly email payload.');
+        }
+        $mail = buildMail($config, $email['destinatario'], $email['oggetto'], $email['corpo'], []);
+        $attempted = true;
+        if (!sendMessage($mail)) {
+            $definitive = true;
+            throw new RuntimeException('The email provider rejected the anomaly message.');
+        }
+        apiRequest($config, array_merge($identity, ['action' => 'complete', 'message_id' => $mail['message_id']]));
+        return ['status' => 'sent', 'email_id' => $email['id'], 'attachments' => 0];
+    } catch (Throwable $error) {
+        $status = !$attempted || $definitive ? 'failed' : 'uncertain';
+        try {
+            apiRequest($config, array_merge($identity, ['action' => 'retry',
+                'error' => $error->getMessage(), 'definitive' => $status === 'failed']));
+        } catch (Throwable $ignored) {
+            // An unacknowledged provider handoff remains uncertain and is never replayed.
+        }
+        return ['status' => $status, 'email_id' => $identity['email_id']];
+    }
+}
+
+function processOne(array $config, bool $reportsOnly = false, bool $activityOnly = false, bool $anomalyOnly = false): array
+{
+    if (($reportsOnly ? 1 : 0) + ($activityOnly ? 1 : 0) + ($anomalyOnly ? 1 : 0) > 1) {
+        throw new RuntimeException('Email worker modes are mutually exclusive.');
+    }
+    $claimed = apiRequest($config, ['action' => 'claim', 'shipment_protocol' => 1, 'report_protocol' => 1, 'reports_only' => $reportsOnly, 'activity_email_protocol' => 1, 'activity_email_protocols' => [1, 2], 'activity_only' => $activityOnly, 'anomaly_only' => $anomalyOnly]);
     if (($claimed['status'] ?? '') === 'idle') {
         return ['status' => 'idle'];
     }
@@ -264,6 +304,15 @@ function processOne(array $config, bool $reportsOnly = false, bool $activityOnly
         throw new RuntimeException('Risposta claim non valida.');
     }
     $email = $claimed['email'];
+    if ($anomalyOnly) {
+        if (!str_starts_with((string)($email['id'] ?? ''), 'anomaly:')) {
+            throw new RuntimeException('Anomaly-only worker protocol mismatch.');
+        }
+        return processAnomalyClaim($config, $claimed);
+    }
+    if (str_starts_with((string)($email['id'] ?? ''), 'anomaly:')) {
+        throw new RuntimeException('Anomaly job rejected by a non-anomaly worker.');
+    }
     if ($activityOnly && !str_starts_with((string)$email['id'], 'activity:')) {
         throw new RuntimeException('Worker activity protocol mismatch.');
     }
@@ -353,6 +402,12 @@ try {
             'from_email' => safeHeader((string)$config['from_email'])]);
     }
 
+    if ($action === 'anomaly_email_capabilities') {
+        respond(['anomaly_email_protocol' => 1, 'queue_enabled' => ($config['queue_enabled'] ?? false) === true,
+            'from_email' => safeHeader((string)$config['from_email']), 'attachments_enabled' => false,
+            'text_only' => true]);
+    }
+
     if ($action === 'test') {
         respond(runTest($config));
     }
@@ -361,13 +416,14 @@ try {
     }
 
     $reportsOnly = $action === 'run_reports';
-    if ($reportsOnly) {
+    $anomalyOnly = $action === 'run_anomalies';
+    if ($reportsOnly || $anomalyOnly) {
         set_time_limit(600);
     }
-    $limit = $reportsOnly ? 40 : max(1, min(25, (int)($config['max_jobs_per_run'] ?? 10)));
+    $limit = ($reportsOnly || $anomalyOnly) ? 40 : max(1, min(25, (int)($config['max_jobs_per_run'] ?? 10)));
     $results = [];
     for ($index = 0; $index < $limit; $index++) {
-        $result = processOne($config, $reportsOnly, $action === 'run_activity');
+        $result = processOne($config, $reportsOnly, $action === 'run_activity', $anomalyOnly);
         $results[] = $result;
         if ($result['status'] === 'idle') {
             break;

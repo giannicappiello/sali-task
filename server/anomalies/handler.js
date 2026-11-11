@@ -1,6 +1,7 @@
 import { authorizeAIRequest } from '../ai/access.js';
 import { anomalyTools, readAnomalies } from './tools.js';
 import { validateInput } from '../second-brain/schema.js';
+import { createProgremesReadonlyAdmin } from '../progremes-readonly-auth.js';
 export async function handleAnomalies(req, res, { authorize = authorizeAIRequest } = {}) {
  res.setHeader('Cache-Control', 'no-store');
  try {
@@ -22,6 +23,11 @@ export async function handleAnomalies(req, res, { authorize = authorizeAIRequest
   }
   if (req.method !== 'POST') return res.status(405).json({ error: 'Metodo non consentito.' });
   const tool = req.query.action === 'configure' ? tools.ANOMALY_CONFIGURE : tools.ANOMALY_UPDATE;
+  if (req.query.action === 'readiness') {
+   if (auth.profile?.ruoli?.amministratore_workspace !== true || auth.capabilities?.role_ai_level !== 'conferma') throw Object.assign(Error('Verifica prerequisiti riservata ad amministratori Workspace.'), { status: 403 });
+   const { verifyAnomalyReadiness } = await import('./delivery.js');
+   return res.json(await verifyAnomalyReadiness(createProgremesReadonlyAdmin(), { ownerId: auth.profile.id }));
+  }
   if (!tool) throw Object.assign(Error('Proposte non autorizzate.'), { status: 403 });
   validateInput(tool.inputSchema, req.body);
   const result = await tool.execute(req.body);

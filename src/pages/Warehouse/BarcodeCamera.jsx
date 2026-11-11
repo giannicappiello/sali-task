@@ -32,6 +32,8 @@ function CameraSession({ onRead, onResolve, onClose, paused, onRestart, contextL
     focusTimers = useRef([]),
     candidate = useRef(createScanCandidate()),
     releaseGate = useRef(createNextScanGate());
+  const [scanQuantity,setScanQuantity] = useState("1");
+  const validQuantity = Number.isSafeInteger(Number(scanQuantity)) && Number(scanQuantity)>=1 && Number(scanQuantity)<=10000;
   const [ready, setReady] = useState(false),
     [starting, setStarting] = useState(true),
     [busy, setBusy] = useState(false),
@@ -195,7 +197,7 @@ function CameraSession({ onRead, onResolve, onClose, paused, onRestart, contextL
           if (!current.cancelled) setCooling(false);
         }, 900),
       );
-      const result = await current.onRead(code);
+      const result = await current.onRead(code, Number(scanQuantity));
       if (current.cancelled) return;
       finishResult(result,code);
     } catch (failure) {
@@ -389,10 +391,11 @@ function CameraSession({ onRead, onResolve, onClose, paused, onRestart, contextL
             </div>
             <form className="op-camera-manual" onSubmit={event=>{event.preventDefault();if(!manual.trim() || busy || paused || cartonPrompt)return;state.current.manualEditing=false;void holdCode(manual.trim());setManual("");}}>
               <input aria-label="Barcode o codice articolo IT" placeholder="Barcode o codice IT" autoComplete="off" maxLength={100} value={manual} disabled={busy || paused || !!cartonPrompt} onChange={event=>{state.current.manualEditing=!!event.target.value;resetCode();setManual(event.target.value);}}/>
-              <button type="submit" disabled={!manual.trim() || busy || paused || !!cartonPrompt}>Cerca</button>
+              <button type="submit" disabled={!manual.trim() || busy || paused || !!cartonPrompt}>Ricerca rapida</button>
+              <label className="op-camera-quantity">Quantità<input aria-label="Quantità da aggiungere" type="number" inputMode="numeric" min="1" max="10000" step="1" value={scanQuantity} disabled={busy || paused || !!cartonPrompt} onChange={event=>setScanQuantity(event.target.value)}/></label>
             </form>
             {captured && <div className="op-camera-confirmation">
-              <div className="op-camera-product" role="status">{resolving ? "Ricerca prodotto…" : product ? <><strong>{product.code} · {product.description}</strong><small>{product.excluded ? "Riga informativa: non richiede imballo" : mode==="piece" ? "1 pezzo" : mode === "pallet" ? (product.piecesPerCarton && product.boxesPerPallet ? `${product.boxesPerPallet} colli × ${product.piecesPerCarton} pezzi = ${product.boxesPerPallet * product.piecesPerCarton} pezzi/bancale` : "Completa qui i dati mancanti alla conferma della lettura") : product.piecesPerCarton ? `${product.piecesPerCarton} pezzi per cartone` : "Pezzi per cartone da compilare nel capitolato"}</small>{product.wrong && <small className="op-bad">Prodotto non previsto nell’ordine</small>}</> : "Prodotto non identificato"}</div>
+              <div className="op-camera-product" role="status">{resolving ? "Ricerca prodotto…" : product ? <><strong>{product.code} · {product.description}</strong><small>{product.excluded ? "Riga informativa: non richiede imballo" : mode==="piece" ? `${scanQuantity || "—"} pezzi` : mode === "pallet" ? (product.piecesPerCarton && product.boxesPerPallet ? `${product.boxesPerPallet} colli × ${product.piecesPerCarton} pezzi = ${product.boxesPerPallet * product.piecesPerCarton} pezzi/bancale` : "Completa qui i dati mancanti alla conferma della lettura") : product.piecesPerCarton ? `${product.piecesPerCarton} pezzi per cartone` : "Pezzi per cartone da compilare nel capitolato"}</small>{product.wrong && <small className="op-bad">Prodotto non previsto nell’ordine</small>}</> : "Prodotto non identificato"}</div>
               <button type="button" disabled={busy || paused || !!cartonPrompt} onClick={resetCode}>Rileggi</button>
             </div>}
             {cartonPrompt && <PreparationProductPrompt prompt={cartonPrompt} pieces={cartonPieces} onPieces={onCartonPieces} weight={unitWeight} onWeight={onUnitWeight} boxes={palletBoxes} onBoxes={onPalletBoxes} busy={busy || paused} onCancel={onCancelCarton} onSave={saveCarton}/>}
@@ -410,7 +413,7 @@ function CameraSession({ onRead, onResolve, onClose, paused, onRestart, contextL
           <button
             type="button"
             className="op-camera-read"
-            disabled={(!captured && starting) || busy || cooling || paused || resolving || (captured && !product) || !activePackage || !activePallet || !!cartonPrompt}
+            disabled={!validQuantity || (!captured && starting) || busy || cooling || paused || resolving || (captured && !product) || !activePackage || !activePallet || !!cartonPrompt}
             onClick={() => void capture()}
             aria-busy={busy || starting}
           >

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { anomalyEmail,buildEmailJobs,claimAnomalyEmail,anomalyEmailAction,anomalyWorkerReady,dispatchAnomalyEmails,enqueueAnomalyEmails } from './delivery.js';
+import { anomalyEmail,buildEmailJobs,claimAnomalyEmail,anomalyEmailAction,anomalyWorkerReady,dispatchAnomalyEmails,enqueueAnomalyEmails,verifyAnomalyReadiness } from './delivery.js';
 
 test('daily text email makes incomplete coverage and no-auto-change policy explicit',()=>{
  const result=anomalyEmail({day:'2026-11-10',window:{from:'2026-11-10',toExclusive:'2026-12-08'},findings:[{severity:'high',title:'Carenza',description:'Materiale insufficiente',evidence:{article:'MP1',shortage:2,unit:'KG'}}],coverage:{movements:{complete:false,reason:'cutoff non verificato'}},runUrl:'https://workspace.progre.it/anomalie?run=1'});
@@ -37,4 +37,16 @@ test('email readiness and dispatch require the dedicated text-only worker protoc
  const ready=await anomalyWorkerReady(fetchImpl,env);assert.equal(ready.anomaly_email_protocol,1);assert.match(calls[0].url,/action=anomaly_email_capabilities/);
  const result=await dispatchAnomalyEmails({fetchImpl,env});assert.equal(result.status,'dispatch_completed');assert.equal(JSON.parse(calls[2].options.body).action,'run_anomalies');
  await assert.rejects(anomalyWorkerReady(async()=>new Response(JSON.stringify({report_protocol:1,queue_enabled:true,from_email:'x@y.z'}),{status:200}),env),{code:'EMAIL_WORKER_NOT_READY'});
+});
+
+test('readiness verifies the configured scheduled owner and persisted recipient policy',async()=>{
+ const admin={id:'admin',auth_user_id:'auth-admin',attivo:true,email:'admin@example.test',ruoli:{amministratore_workspace:true}};
+ const actor={...admin,id:'actor'};
+ const agent={enabled:false,config_version:3,recipient_policy:{workspaceAdmins:true,departmentManager:false}};
+ let verifiedOwner;
+ const db={from(table){let target;const q={select(){return q;},eq(key,value){if(key==='id')target=value;return q;},in(){return q;},single:async()=>({data:agent}),maybeSingle:async()=>({data:target==='actor'?actor:admin}),then(resolve){return Promise.resolve({data:table==='utenti'?[admin]:table==='reparti'?[{id:'dept-with-no-manager'}]:[]}).then(resolve);}};return q;},async rpc(name){return {data:name==='workspace_area_access_codes'?['anomalie']:true};}};
+ const env={FABBISOGNI_OWNER_PROFILE_ID:'scheduled-owner',ARUBA_EMAIL_WORKER_URL:'https://worker.example.test',ARUBA_EMAIL_WORKER_SECRET:'fixture'};
+ const result=await verifyAnomalyReadiness(db,{ownerId:'actor',env,collectSnapshot:async(_db,id)=>{verifiedOwner=id;return {coverage:{}};},fetchImpl:async()=>Response.json({anomaly_email_protocol:1,queue_enabled:true,attachments_enabled:false,text_only:true,from_email:'a@example.test'})});
+ assert.equal(verifiedOwner,'scheduled-owner');assert.equal(result.readiness.ready,true);assert.equal(result.readiness.recipients.ready,true);assert.equal(result.enabled,false);
+ await assert.rejects(verifyAnomalyReadiness(db,{ownerId:'actor',env:{}}),{code:'SCHEDULED_OWNER_NOT_CONFIGURED'});
 });

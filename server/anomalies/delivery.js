@@ -132,20 +132,22 @@ export async function dispatchAnomalyEmails({fetchImpl=fetch,env=process.env}={}
  return {status:'dispatch_completed',results:result.results};
 }
 
-export async function verifyAnomalyReadiness(db,{ownerId,fetchImpl=fetch,env=process.env}={}){
- const agent=must(await db.from('anomaly_agents').select('readiness,enabled').eq('code','fabbisogni').single());
+export async function verifyAnomalyReadiness(db,{ownerId,fetchImpl=fetch,env=process.env,collectSnapshot}={}){
+ const agent=must(await db.from('anomaly_agents').select('readiness,enabled,recipient_policy').eq('code','fabbisogni').single());
  if(agent.enabled)throw Object.assign(Error('Disattivare il servizio prima di aggiornare la readiness.'),{code:'AGENT_ALREADY_ENABLED'});
  const owner=must(await db.from('utenti').select('id,auth_user_id,attivo,ruoli(amministratore_workspace)').eq('id',ownerId).maybeSingle());
  if(owner?.attivo!==true||owner.ruoli?.amministratore_workspace!==true)throw Object.assign(Error('Titolare non autorizzato.'),{code:'OWNER_NOT_AUTHORIZED'});
  const {collectControlSnapshot}=await import('./sources.js');
- const snapshot=await collectControlSnapshot(db,ownerId,{now:new Date()});
+ const scheduledOwnerId=env.FABBISOGNI_OWNER_PROFILE_ID;
+ if(!scheduledOwnerId)throw Object.assign(Error('Titolare pianificato non configurato.'),{code:'SCHEDULED_OWNER_NOT_CONFIGURED'});
+ const snapshot=await (collectSnapshot||collectControlSnapshot)(db,scheduledOwnerId,{now:new Date()});
  const coverage=snapshot.coverage||{};
  const required=['planning','bom','stock','requirements','purchaseOrders','receipts','quality','capacity','movements','stock_reconciliation'];
  const gaps=required.filter(name=>coverage[name]?.complete!==true);
  let email;try{email={ready:true,...await anomalyWorkerReady(fetchImpl,env)}}catch(error){email={ready:false,code:error.code||'worker_error'}}
  const recipientResults={ready:false,reason:'Destinatari di ciascun perimetro da verificare.'};
  const departments=must(await db.from('reparti').select('id,nome').eq('attivo',true));
- try{recipientResults.ready=true;await authorizedRecipients(db,{departmentManager:true,workspaceAdmins:true,departmentOverrides:{},additionalUserIds:[]},departments.map(x=>x.id));}
+ try{recipientResults.ready=true;await authorizedRecipients(db,agent.recipient_policy,departments.map(x=>x.id));}
  catch(error){recipientResults.ready=false;recipientResults.code=error.code||'recipient_error'}
  const ready=email.ready&&recipientResults.ready;
  const readiness={ready,emailReady:email.ready,reason:ready?'Email testuale verificata e destinatari autorizzati verificati. Il report evidenzia ogni lacuna di copertura.':`Servizio bloccato: email ${email.ready?'verificata':'non verificata'}; destinatari ${recipientResults.ready?'verificati':'non verificati'}.`,checkedAt:new Date().toISOString(),dataCoverageComplete:gaps.length===0,coverage:Object.fromEntries(required.map(k=>[k,{complete:coverage[k]?.complete===true,reason:coverage[k]?.reason||null}])),email:{ready:email.ready,from:email.from_email||null},recipients:{ready:recipientResults.ready,code:recipientResults.code||null}};

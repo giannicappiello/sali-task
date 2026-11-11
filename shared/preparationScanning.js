@@ -23,6 +23,11 @@ export function appendPreparationScan(state, product, body, event, actor, makeId
     state.packages.push(pack);
   }
   assert(!pack.closed, 'Riapri il collo prima di aggiungere prodotti.');
+  // A whole carton is a new physical box when the selected box already has pieces.
+  if (mode === 'carton' && state.scans.some(scan=>scan.packageId===pack.id)) {
+    pack={id:makeId(),number:Math.max(0,...state.packages.map(item=>item.number))+1,palletId:pack.palletId};
+    state.packages.push(pack);
+  }
   const quantity = mode === 'piece' ? 1 : integer(product.piecesPerCarton, 'Pezzi per collo');
   const boxesPerPallet = mode === 'pallet' ? integer(product.boxesPerPallet, 'Colli per bancale', 1, 2000) : 1;
   if (mode === 'pallet') {

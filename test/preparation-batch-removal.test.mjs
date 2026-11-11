@@ -41,3 +41,11 @@ test('API batches replay once and deletions preserve other pallets with an audit
   assert.equal(mexal.sends,0,'editing never sends a DDT');
  }finally{await sql.close();}
 });
+
+test('switching from pieces to two cartons creates two new boxes and keeps the partial box unchanged',()=>{
+ const base=empty(),packId=base.packages[0].id;
+ const partial=appendPreparationScan(base,product,{mode:'piece',units:2,packageId:packId},event(),actor,randomUUID,'server');
+ const result=appendPreparationScan(partial,product,{mode:'carton',units:2,packageId:packId},event(),actor,randomUUID,'server');
+ assert.equal(result.packages.length,3);assert.equal(result.scans.filter(s=>s.packageId===packId).reduce((n,s)=>n+s.quantity,0),2);
+ for(const pack of result.packages.filter(p=>p.id!==packId))assert.equal(result.scans.filter(s=>s.packageId===pack.id).reduce((n,s)=>n+s.quantity,0),3);
+});

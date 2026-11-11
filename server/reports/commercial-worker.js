@@ -44,7 +44,7 @@ export async function commercialWorkerAction(db,body) {
     requireThat(job.status==='uncertain','Esito invio report inatteso.',409);
     must(await db.from('commercial_report_emails').update({status:'sent',provider_message_id:String(body.message_id||'').slice(0,200),sent_at:new Date().toISOString()}).eq('id',id).eq('status','uncertain').eq('lock_token',job.lock_token));
     const remaining=must(await db.from('commercial_report_emails').select('id').eq('batch_id',job.batch_id).neq('status','sent').limit(1));
-    if(!remaining.length)must(await db.from('commercial_report_batches').update({status:'sent'}).eq('id',job.batch_id));
+    if(!remaining.length)must(await db.rpc('commercial_report_finish_batch',{p_batch:job.batch_id}));
     return {status:'completed'};
   }
   requireThat(body.action==='retry','Azione report non riconosciuta.');

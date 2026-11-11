@@ -36,6 +36,6 @@ export async function handleCommercialReports(req,res,{authorize=authorizeAIRequ
     requireThat(key,'Cifratura del collegamento non disponibile.',503);
     await loadReportRecipients(auth.admin);await workerCheck();
     must(await auth.admin.from('commercial_report_settings').upsert({singleton:true,owner_id:auth.profile.id,enabled:true,policy_hash:POLICY_HASH,trigger_id:req.body.triggerId,token_encrypted:supplied?sealToken(supplied,key,auth.profile.id):old.token_encrypted,approved_at:new Date().toISOString()}));
-    return res.json({status:'enabled',agents:AGENTS.length,schedule:{day:10,time:'10:00',timezone:'Europe/Rome'}});
+    return res.json({status:'enabled',agents:AGENTS.length,schedule:{day:old?.delivery_day??2,time:'10:00',timezone:'Europe/Rome',nextDay:old?.next_delivery_day??null,catchUp:true}});
   }catch(error){return res.status(error.status||500).json({error:error.status?error.message:'Collegamento report non disponibile. Verificare configurazione e registro.'});}
 }

@@ -19,16 +19,27 @@ export const requireThat = (condition,message,status=400) => {if(!condition)thro
 const digest = value=>createHash('sha256').update(value).digest('hex');
 export const POLICY_HASH = digest(JSON.stringify({agents:AGENTS,aggregate:AGGREGATE_TO,day:10,time:'10:00',zone:'Europe/Rome',version:2,managerScope:'linked-agents-and-own',centralScope:'all-individuals-plus-pr-ph-groups'}));
 export const recipientsFingerprint = recipients=>digest(JSON.stringify(recipients));
-export function reportPeriod(now=new Date()) {
+export function reportPeriod(now=new Date(),deliveryDay=10) {
+  requireThat([2,10].includes(deliveryDay),'Giorno invio report non valido.');
   const parts=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Rome',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(now).map(p=>[p.type,p.value]));
   const previous=new Date(Date.UTC(Number(parts.year),Number(parts.month)-2,1));
-  return {due:['09','10'].includes(parts.day)&&['09','10'].includes(parts.hour),deliveryDue:parts.day==='10'&&parts.hour==='10',period:previous.toISOString().slice(0,10),month:previous.toLocaleString('it-IT',{month:'long',year:'numeric',timeZone:'UTC'})};
+  return {due:[deliveryDay-1,deliveryDay].includes(Number(parts.day))&&['09','10'].includes(parts.hour),deliveryDue:Number(parts.day)===deliveryDay&&parts.hour==='10',period:previous.toISOString().slice(0,10),month:previous.toLocaleString('it-IT',{month:'long',year:'numeric',timeZone:'UTC'})};
 }
 export function subject(period) {
   requireThat(/^\d{4}-\d{2}-01$/.test(period),'Mese report non valido.');
   const date=new Date(period+'T00:00:00Z');
   requireThat(Number.isFinite(+date)&&date.toISOString().slice(0,10)===period,'Mese report non valido.');
   return 'Report Commerciale mese di '+date.toLocaleString('it-IT',{month:'long',year:'numeric',timeZone:'UTC'});
+}
+// Compare Italian calendar time so the approved 10:00 start follows DST.
+// There is no expiry: a verified late batch must remain deliverable.
+export function reportDeliveryDue(period, now = new Date(), deliveryDay = 10) {
+  requireThat([2,10].includes(deliveryDay),'Giorno invio report non valido.');
+  subject(period); // Validate the stored reporting month.
+  const date = new Date(period + 'T00:00:00Z');
+  const start = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, deliveryDay)).toISOString().slice(0, 10) + 'T10:00';
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Rome', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(now).map(p => [p.type, p.value]));
+  return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}` >= start;
 }
 export function email(value) {
   const normalized=String(value||'').trim().toLowerCase();

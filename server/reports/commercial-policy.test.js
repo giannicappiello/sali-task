@@ -1,11 +1,23 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AGENTS,reportPeriod,subject,resolveRecipients,buildDeliveries,buildReportManifest,sealToken,unsealToken} from './commercial-policy.js';
+import {AGENTS,reportPeriod,reportDeliveryDue,subject,resolveRecipients,buildDeliveries,buildReportManifest,sealToken,unsealToken} from './commercial-policy.js';
 const users=AGENTS.map((a,i)=>({id:'user-'+i,attivo:true,email:`agent${i}@example.test`,responsabile_utente_id:i>=10?'manager':null}));
 users.push({id:'manager',attivo:true,email:'Manager@example.test'});
 const agents=AGENTS.map((a,i)=>({codice:a.code,attivo_mexal:true,workspace_utente_id:'user-'+i}));
 const makeFiles=r=>buildReportManifest(r).targets.map(t=>({artifact_key:t.key,period:'2026-10-01',source:t.source,network:t.network,bytes:750000,verified:true}));
 const files=makeFiles(resolveRecipients(agents,users));
+
+test('late delivery remains due across days, months and years, and never starts early',()=>{
+  assert.equal(reportDeliveryDue('2026-10-01',new Date('2026-11-10T08:59:00Z')),false);
+  for(const date of ['2026-11-10T09:00:00Z','2026-11-11T00:00:00Z','2027-01-01T00:00:00Z'])assert.equal(reportDeliveryDue('2026-10-01',new Date(date)),true);
+  assert.equal(reportDeliveryDue('2027-06-01',new Date('2027-07-02T07:59:00Z'),2),false);
+  assert.equal(reportDeliveryDue('2027-06-01',new Date('2027-07-02T08:00:00Z'),2),true);
+  assert.equal(reportDeliveryDue('2026-12-01',new Date('2027-01-02T09:00:00Z'),2),true);
+  assert.equal(reportPeriod(new Date('2026-12-01T08:00:00Z'),2).due,true);
+  assert.equal(reportPeriod(new Date('2026-12-02T09:00:00Z'),2).deliveryDue,true);
+  assert.equal(reportPeriod(new Date('2026-12-10T09:00:00Z'),2).due,false);
+  assert.throws(()=>reportDeliveryDue('2026-10-31',new Date()),/Mese report/);
+});
 test('Rome 10:00 follows winter and summer time, with previous-month rollover',()=>{
   assert.deepEqual(reportPeriod(new Date('2026-11-10T09:00:00Z')),{due:true,deliveryDue:true,period:'2026-10-01',month:'ottobre 2026'});
   assert.equal(reportPeriod(new Date('2027-07-10T08:00:00Z')).due,true);

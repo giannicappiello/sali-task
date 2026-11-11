@@ -4,7 +4,7 @@ import {createHash} from 'node:crypto';
 import {Buffer} from 'node:buffer';
 import {PDFDocument} from 'pdf-lib';
 import {AGENTS,POLICY_HASH,resolveRecipients,buildReportManifest,recipientsFingerprint} from './commercial-policy.js';
-import {reportArtifact} from './commercial-service.js';
+import {reportArtifact,triggerMonthlyReports,dispatchCommercialReports} from './commercial-service.js';
 import {claimCommercialEmail} from './commercial-worker.js';
 
 function fixture() {
@@ -27,6 +27,7 @@ function fixture() {
   },async rpc(name,args){
     if(name==='commercial_report_queue'){db.queueCalls++;tables.commercial_report_emails=args.p_jobs;batch.status='queued';return {data:null};}
     if(name==='commercial_report_claim_email')return {data:tables.commercial_report_emails[0]||null};
+    if(name==='commercial_report_finish_batch')return {data:false};
     throw new Error('Unexpected RPC '+name);
   }};
   return {auth:{admin:db,profile:{id:'owner',ruoli:{amministratore_workspace:true}}},db,batch,recipients,manifest};
@@ -54,7 +55,7 @@ test('complete 16-PDF batch queues manager-restricted envelopes atomically witho
   await reportArtifact(f.auth,{...input,action:'chunk'});
   await assert.rejects(()=>reportArtifact(f.auth,{...input,action:'finalize',source:'fatture'}),/fonte/);
   await assert.rejects(()=>reportArtifact(f.auth,{...input,action:'finalize',sha256:'0'.repeat(64)}),/Integrità/);
-  const result=await reportArtifact(f.auth,{...input,action:'finalize'});
+  const result=await reportArtifact(f.auth,{...input,action:'finalize'},{now:new Date('2026-11-09T09:00:00Z')});
   assert.equal(result.status,'queued');assert.equal(result.emails,15);assert.equal(f.db.queueCalls,1);
   assert.equal(f.db.tables.commercial_report_chunks.length,0);
   const manager=f.db.tables.commercial_report_emails.find(j=>j.recipient==='agent11@example.test');
@@ -69,4 +70,44 @@ test('worker blocks changed contacts before handing off any PDF',async()=>{
   f.db.tables.utenti[0].attivo=false;
   await assert.rejects(()=>claimCommercialEmail(f.db,'worker'),/disattivato/);
   assert.equal(f.db.tables.commercial_report_emails[0].status,'failed');
+});
+
+test('status exposes received and missing chunks without revealing contents or sending',async()=>{
+ const f=fixture(),key=f.manifest[0].key;
+ f.db.tables.commercial_report_chunks=[{batch_id:'batch',artifact_key:key,part:0,total:3},{batch_id:'batch',artifact_key:key,part:2,total:3}];
+ const result=await reportArtifact(f.auth,{batchId:'batch',action:'status'});
+ assert.deepEqual(result.missing[0].receivedParts,[0,2]);
+ assert.deepEqual(result.missing[0].missingParts,[1]);
+ assert.equal(result.missing[1].total,null);assert.equal(f.db.queueCalls,0);
+});
+
+test('late PDF finalization schedules delivery on the 11th and in subsequent months',async()=>{
+ for(const date of ['2026-11-11T12:00:00Z','2026-12-03T12:00:00Z']) {
+  const f=fixture(),input=await pdfUpload(f.manifest.at(-1));let dispatched=0;const scheduled=[];
+  f.db.tables.commercial_report_files=f.manifest.slice(0,-1).map(t=>({artifact_key:t.key,batch_id:'batch',period:f.batch.period,network:t.network,source:t.source,bytes:1000,verified:true}));
+  await reportArtifact(f.auth,{...input,action:'chunk'});
+  const result=await reportArtifact(f.auth,{...input,action:'finalize'},{now:new Date(date),dispatch:async()=>{dispatched++;},schedule:promise=>scheduled.push(promise)});
+  await Promise.all(scheduled);
+  assert.equal(result.dispatch,'dispatch_requested');assert.equal(dispatched,1);assert.equal(f.db.queueCalls,1);
+ }
+});
+
+test('daily recovery dispatches old queued batches without creating a new run',async()=>{
+ const f=fixture();f.batch.status='queued';let dispatched=0;
+ const result=await triggerMonthlyReports(f.db,{now:new Date('2026-12-11T09:00:00Z'),dispatch:async()=>{dispatched++;return {status:'dispatch_completed'};},fetchImpl:()=>{throw Error('must not trigger agent');}});
+ assert.equal(result.status,'dispatch_requested');assert.deepEqual(result.batchIds,['batch']);
+ assert.equal(dispatched,1);assert.equal(f.db.tables.commercial_report_batches.length,1);
+ f.db.tables.commercial_report_settings[0].enabled=false;
+ assert.equal((await triggerMonthlyReports(f.db,{dispatch:async()=>{throw Error('disabled');}})).status,'not_due');
+});
+
+test('worker per-message uncertainty is not reported as completed dispatch',async()=>{
+ const env=globalThis.process.env,oldUrl=env.ARUBA_EMAIL_WORKER_URL,oldSecret=env.ARUBA_EMAIL_WORKER_SECRET;
+ env.ARUBA_EMAIL_WORKER_URL='https://example.test/worker';env.ARUBA_EMAIL_WORKER_SECRET='fixture';
+ try {
+  await assert.rejects(()=>dispatchCommercialReports(async(_url,options)=>Response.json(options.method==='GET'?{report_protocol:1,queue_enabled:true}:{status:'ok',results:[{status:'uncertain'}]})),/Non ripetere invii incerti/);
+ } finally {
+  if(oldUrl===undefined)delete env.ARUBA_EMAIL_WORKER_URL;else env.ARUBA_EMAIL_WORKER_URL=oldUrl;
+  if(oldSecret===undefined)delete env.ARUBA_EMAIL_WORKER_SECRET;else env.ARUBA_EMAIL_WORKER_SECRET=oldSecret;
+ }
 });

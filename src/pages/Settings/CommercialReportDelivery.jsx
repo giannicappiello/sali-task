@@ -24,7 +24,9 @@ export default function CommercialReportDelivery() {
   return <main className="page" style={{maxWidth:1080,margin:'0 auto',padding:24}}>
     <Link to="/settings/ai">← Configurazione AI</Link>
     <h1>Invio report commerciali</h1>
-    <p>I report del mese precedente vengono preparati in anticipo con il template Progre e i grafici approvati. L’invio è il 10 del mese alle 10:00, ora italiana.</p>
+    <p>I report del mese precedente vengono preparati in anticipo con il template Progre e i grafici approvati. L’invio è il {plan?.schedule.day??2} del mese alle 10:00, ora italiana.</p>
+    {plan?.schedule.nextDay&&<p>Dopo il completamento di tutti gli invii del primo lotto, la data passerà al {plan.schedule.nextDay} di ogni mese.</p>}
+    <p>I PDF possono essere caricati anche negli altri giorni. Se il lotto viene completato dopo la scadenza, l’invio parte al completamento; i lotti ancora in attesa vengono ricontrollati ogni giorno.</p>
     {error&&<p role="alert">{error}</p>}{outcome&&<p role="status">{outcome}</p>}
     {!plan?<p>Caricamento configurazione…</p>:<>
       <p><strong>{plan.enabled?'Piano attivo':'Piano non attivo'}</strong></p>

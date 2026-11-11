@@ -24,7 +24,8 @@ Leggere `WORKSPACE_EMAIL_CAPABILITY`. Non assumere che un collegamento attivo, i
 
 - `chat-email-v1` autorizza un solo destinatario senza CC. Resta valida nel proprio ambito anche se il singolo destinatario e espresso con `to: [email]`, `cc: []`.
 - `chat-email-v2` autorizza fino a 10 destinatari To/CC per una singola email testuale espressamente richiesta. Non e l'aggiornamento automatico di v1.
-- Per richiedere v2 usare `WORKSPACE_EMAIL_DELEGATION_PROPOSE` con `policyVersion: "chat-email-v2"`. Omettere la versione mantiene il comportamento legacy v1 e non richiede v2.
+- `chat-email-v3` autorizza fino a 30 destinatari complessivi To/CC, con nuova approvazione personale. Non estende le deleghe v1/v2 esistenti.
+- Per richiedere v3 usare `WORKSPACE_EMAIL_DELEGATION_PROPOSE` con `policyVersion: "chat-email-v3"`. Omettere la versione mantiene il comportamento legacy v1 e non richiede v3.
 - La proposta non attiva nulla. Il titolare deve leggere e approvare personalmente `BRAIN_REVIEW kind=email-delegation`. Non automatizzare quella pagina, non spuntare checkbox, non usare un consenso in chat come nuova attivazione persistente. Non modificare ruoli o autorizzazioni.
 - Senza delega compatibile fermarsi oppure offrire la revisione di quella sola email con `BRAIN_REVIEW kind=email`. Non creare una task e non reinviare tramite un percorso alternativo dopo un diniego.
 

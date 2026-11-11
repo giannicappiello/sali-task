@@ -109,3 +109,78 @@ test('actual Postgres: additive To/CC, legacy hashes, scoped v2 consent and roll
   assert.equal((await first('select status from public.workspace_emails where id=$1',[revoked.id],'service_role')).status,'cancelled');
  } finally {await db.close();}
 });
+
+test('actual Postgres: thirty-recipient upgrade preserves consent and filters older workers', {skip:!PGlite},async()=>{
+ const db=new PGlite();
+ try {
+  await db.exec(bootstrap);
+  await db.exec(`create or replace function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;`);
+  for(const file of ['20261108123140_activity_email.sql','20261108123201_chat_email_delegation.sql','20261109182211_email_to_cc.sql']) await db.exec(await readFile(new URL('../../supabase/migrations/'+file,import.meta.url),'utf8'));
+  await db.exec(`insert into public.permessi_utente select '${A}',id from public.permessi; insert into public.permessi_utente select '${B}',id from public.permessi; select set_config('test.ai_confirm','true',false);`);
+  async function as(role,user,sql,params=[]){
+   await db.exec(`set role ${role}; select set_config('request.jwt.claim.sub','${user}',false);`);
+   try{return await db.query(sql,params);}finally{await db.exec('reset role');}
+  }
+  const first=async(sql,params=[],role='authenticated',user=A)=>(await as(role,user,sql,params)).rows[0];
+  const recipients=n=>Array.from({length:n},(_,i)=>`user${i}@example.test`);
+  const prepare=(key,to,cc=[])=>first("select * from public.workspace_prepare_chat_email_v2($1,$2,'Subject','Body',$3)",[to,cc,key]);
+  const send=row=>first('select * from public.workspace_send_chat_email($1,$2)',[row.id,row.payload_hash]);
+  const propose=v=>first(`select * from public.workspace_propose_email_delegation${v===1?'':'_v'+v}()`);
+  const consent=(row,yes=true)=>first('select * from public.workspace_decide_email_delegation($1,$2,$3,$4)',[A,row.id,yes,row.policy_hash],'service_role');
+  const human=row=>first('select * from public.workspace_decide_chat_email_human($1,$2,true,$3)',[A,row.id,row.payload_hash],'service_role');
+  const claim=async v=>(await first('select * from public.workspace_claim_email_v2($1,$2)',['fixture',v],'service_role'))?.workspace_claim_email_v2;
+  const finish=row=>first("select public.workspace_finish_email($1,$2,'accepted','fixture',null)",[row.id,row.lock_token],'service_role');
+  const v1=await propose(1);await consent(v1);
+  const v2=await propose(2);const activeV2=await consent(v2);
+  const historic=await prepare('historic_ten',recipients(10));await send(historic);
+  const hashV2=v2.policy_hash;
+  await db.exec(await readFile(new URL('../../supabase/migrations/20261111194321_email_thirty_recipients.sql',import.meta.url),'utf8'));
+  assert.deepEqual(await first('select * from public.workspace_email_delegations where id=$1',[v2.id]),activeV2);
+  assert.equal((await propose(2)).policy_hash,hashV2);
+  assert.equal((await prepare('historic_ten',recipients(10))).payload_hash,historic.payload_hash);
+  assert.equal((await prepare('historic_ten',recipients(10))).transport_protocol_version,2);
+  const oldClaim=await claim(2);assert.equal(oldClaim.id,historic.id);await finish(oldClaim);
+  const before=(await first('select public.workspace_chat_email_capability()')).workspace_chat_email_capability;
+  assert.equal(before.maxRecipients,30);assert.equal(before.authorizedMaxRecipients,10);assert.equal(before.canSendThirty,false);assert.equal(before.canSendMultiple,true);
+  const to=recipients(15),cc=Array.from({length:15},(_,i)=>`copy${i}@example.test`);
+  const thirty=await prepare('thirty_recipients',to,cc);
+  assert.equal(thirty.transport_protocol_version,3);assert.deepEqual(thirty.to_recipients,to);assert.deepEqual(thirty.cc_recipients,cc);
+  assert.equal((await prepare('thirty_recipients',to,cc)).payload_hash,thirty.payload_hash);
+  await assert.rejects(prepare('thirty_recipients',to.slice(0,14),[to[14],...cc]),/IDEMPOTENCY_CONFLICT/);
+  const changedRoles=await prepare('thirty_roles',to.slice(0,14),[to[14],...cc]);assert.notEqual(changedRoles.payload_hash,thirty.payload_hash);
+  for(const [toList,ccList] of [[recipients(31),[]],[recipients(30),['copy@example.test']],[[],recipients(30)],[recipients(15),[...cc.slice(0,14),'USER0@example.test']],[['one@example.test\r\nBcc:x@example.test'],[]]]) await assert.rejects(prepare('invalid_30',toList,ccList),/RECIPIENTS/);
+  await assert.rejects(send(thirty),/DELEGATION_REQUIRED/);
+  await assert.rejects(first('select * from public.workspace_send_chat_email($1,$2)',[thirty.id,thirty.payload_hash],'authenticated',B),/NOT_ACCESSIBLE/);
+  assert.equal((await as('authenticated',B,'select * from public.workspace_emails where id=$1',[thirty.id])).rows.length,0);
+  await assert.rejects(first('update public.workspace_emails set transport_protocol_version=2 where id=$1 returning *',[thirty.id],'service_role'),/IMMUTABLE_EMAIL_PROPOSAL/);
+  await assert.rejects(first('select * from public.workspace_claim_email_v2(\'attack\',3)'),/permission denied/);
+  const v3=await propose(3);assert.equal(v3.policy_version,'chat-email-v3');assert.equal(v3.policy.max_recipients,30);assert.equal(v3.status,'proposed');assert.notEqual(v3.policy_hash,v2.policy_hash);
+  assert.equal((await propose(3)).id,v3.id);await assert.rejects(send(thirty),/DELEGATION_REQUIRED/);
+  await assert.rejects(first('select * from public.workspace_decide_email_delegation($1,$2,true,$3)',[A,v3.id,v3.policy_hash]),/permission denied/);
+  await assert.rejects(first('select * from public.workspace_decide_email_delegation($1,$2,true,$3)',[B,v3.id,v3.policy_hash],'service_role'),/NOT_ACCESSIBLE/);
+  await assert.rejects(consent({...v3,policy_hash:'f'.repeat(64)}),/DELEGATION_CHANGED/);
+  await consent(v3);
+  const queued=await send(thirty);assert.equal(queued.delegation_id,v3.id);assert.equal(queued.delegation_policy_version,'chat-email-v3');
+  const after=(await first('select public.workspace_chat_email_capability()')).workspace_chat_email_capability;
+  assert.equal(after.authorizedMaxRecipients,30);assert.equal(after.canSendThirty,true);assert.equal(after.delegations.length,3);
+  // Old consumers must skip the larger queued row without changing its status.
+  assert.equal(await claim(1),undefined);assert.equal(await claim(2),undefined);
+  assert.equal((await first('select status from public.workspace_emails where id=$1',[thirty.id])).status,'queued');
+  const small=await prepare('small_after_large',['one@example.test'],['copy@example.test']);await send(small);
+  const smallClaim=await claim(2);assert.equal(smallClaim.id,small.id);await finish(smallClaim);
+  const largeClaim=await claim(3);assert.equal(largeClaim.id,thirty.id);assert.deepEqual(largeClaim.cc_recipients,cc);await finish(largeClaim);
+  const revoked=await prepare('revoke_large',recipients(11));await send(revoked);await consent(v3,false);
+  assert.equal(await claim(3),undefined);assert.equal((await first('select status from public.workspace_emails where id=$1',[revoked.id])).status,'cancelled');
+  await assert.rejects(send(changedRoles),/DELEGATION_REQUIRED/);
+  // Per-message human approval can still cover exactly 30; no new delegation.
+  await human(changedRoles);assert.equal(await claim(2),undefined);const humanClaim=await claim(3);assert.equal(humanClaim.id,changedRoles.id);await finish(humanClaim);
+  const v2Still=await prepare('v2_still_ten',recipients(10));assert.equal((await send(v2Still)).delegation_id,v2.id);await finish(await claim(2));
+  const activity=await first("select * from public.workspace_propose_activity_email_v2($1,$2,$3,'Activity','Body','activity_thirty',true)",[T,to,cc]);
+  assert.equal(activity.transport_protocol_version,3);await first('select * from public.workspace_decide_activity_email($1,true,$2)',[activity.id,activity.payload_hash]);
+  assert.equal(await claim(2),undefined);const activityClaim=await claim(3);assert.equal(activityClaim.id,activity.id);await finish(activityClaim);
+  const stale=await first("select * from public.workspace_propose_activity_email_v2($1,$2,$3,'Activity','Body','activity_thirty_stale',false)",[T,to,cc]);
+  await first('select * from public.workspace_decide_activity_email($1,true,$2)',[stale.id,stale.payload_hash]);
+  await db.exec(`update public.v4_fasi_progetto set owner_id='${B}' where id='${T}'`);assert.equal(await claim(3),undefined);
+  assert.equal((await first('select status from public.workspace_emails where id=$1',[stale.id],'service_role')).status,'cancelled');
+ } finally {await db.close();}
+});

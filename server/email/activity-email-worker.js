@@ -10,7 +10,7 @@ async function rpc(db, name, args) {
 }
 
 export async function claimActivityEmail(db, worker, protocol = 1) {
-  if (![1, 2].includes(protocol)) throw new Error('Invalid activity email protocol.');
+  if (![1, 2, 3].includes(protocol)) throw new Error('Invalid activity email protocol.');
   await rpc(db, 'workspace_expire_email_claims', {});
   // Select compatible rows inside the atomic SQL claim, never after claiming.
   const data = protocol === 1
@@ -36,12 +36,12 @@ export async function claimActivityForHttpWorker(db, worker, protocol = 1) {
   return {status:'claimed', worker_id:worker, activity_email_protocol:version,
     email:{id:`activity:${job.id}`, lock_token:job.lock_token,
       destinatario:job.recipient, oggetto:job.subject, corpo:job.body,
-      ...(version === 2 ? {to_recipients:job.to_recipients, cc_recipients:job.cc_recipients} : {})}, attachments:[]};
+      ...(version >= 2 ? {to_recipients:job.to_recipients, cc_recipients:job.cc_recipients} : {})}, attachments:[]};
 }
 
 export async function activityWorkerAction(db, payload) {
   const id = String(payload.email_id || '').slice('activity:'.length);
-  if (![1, 2].includes(payload.activity_email_protocol) || !UUID.test(id) || !UUID.test(String(payload.lock_token || ''))
+  if (![1, 2, 3].includes(payload.activity_email_protocol) || !UUID.test(id) || !UUID.test(String(payload.lock_token || ''))
       || !['accepted','failed','uncertain'].includes(payload.action)) {
     throw new Error('Invalid activity email protocol.');
   }
@@ -53,18 +53,18 @@ export async function activityWorkerAction(db, payload) {
 }
 
 export async function processNextActivityEmailJob({supabase,smtp,workerId,isPermanentError=isPermanentSmtpError}) {
-  const job = await claimActivityEmail(supabase,workerId,2);
+  const job = await claimActivityEmail(supabase,workerId,3);
   if (!job) return {status:'idle'};
   let accepted = false;
   try {
     const version = job.transport_protocol_version ?? 1;
-    if (![1, 2].includes(version)
-        || (version === 2 && (!Array.isArray(job.to_recipients) || !Array.isArray(job.cc_recipients)))
+    if (![1, 2, 3].includes(version)
+        || (version >= 2 && (!Array.isArray(job.to_recipients) || !Array.isArray(job.cc_recipients)))
         || (version === 1 && (job.to_recipients != null || job.cc_recipients != null))) throw Object.assign(new Error('Invalid activity email protocol.'), {code:'EENVELOPE'});
-    const recipients = normalizeTransportRecipients(version === 2 ? job.to_recipients : job.recipient,
-      version === 2 ? job.cc_recipients : []);
+    const recipients = normalizeTransportRecipients(version >= 2 ? job.to_recipients : job.recipient,
+      version >= 2 ? job.cc_recipients : [], version === 3 ? 30 : 10);
     const result = await smtp.send({to:version === 1 ? recipients.to[0] : recipients.to,
-      ...(version === 2 ? {cc:recipients.cc} : {}),subject:job.subject,text:job.body,attachments:[]});
+      ...(version >= 2 ? {cc:recipients.cc} : {}),...(version === 3 ? {maxRecipients:30} : {}),subject:job.subject,text:job.body,attachments:[]});
     accepted = true;
     await finishActivityEmail(supabase,job,'accepted',result.messageId);
     return {status:'accepted',emailId:job.id};
@@ -98,7 +98,7 @@ export async function getActivityEmailTransport({fetchImpl=fetch,environment=glo
     const capability = await response.json();
     const supported = Array.isArray(capability.activity_email_protocols)
       ? capability.activity_email_protocols : [capability.activity_email_protocol];
-    if (![1, 2].includes(requiredProtocol) || !supported.includes(requiredProtocol)) return {ready:false,status:'unsupported'};
+    if (![1, 2, 3].includes(requiredProtocol) || !supported.includes(requiredProtocol)) return {ready:false,status:'unsupported'};
     if (capability.queue_enabled !== true) return {ready:false,status:'paused'};
     return {ready:true,status:'ready'};
   } catch {

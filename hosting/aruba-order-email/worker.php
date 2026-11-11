@@ -102,10 +102,10 @@ function encodeHeader(string $value): string
 }
 
 // Bare mailboxes only. Validate before trimming so CRLF cannot be hidden.
-function mailRecipients(string|array $to, array $cc = []): array
+function mailRecipients(string|array $to, array $cc = [], int $maxRecipients = 10): array
 {
     $to = is_string($to) ? [$to] : $to;
-    if (!array_is_list($to) || !array_is_list($cc) || count($to) === 0 || count($to) + count($cc) > 10) {
+    if (!array_is_list($to) || !array_is_list($cc) || count($to) === 0 || count($to) + count($cc) > $maxRecipients) {
         throw new RuntimeException('Invalid email recipients.');
     }
     $seen = [];
@@ -129,9 +129,9 @@ function mailRecipients(string|array $to, array $cc = []): array
     return ['to' => $normalize($to), 'cc' => $normalize($cc)];
 }
 
-function buildMail(array $config, string|array $to, string $subject, string $body, array $attachments, array $cc = []): array
+function buildMail(array $config, string|array $to, string $subject, string $body, array $attachments, array $cc = [], int $maxRecipients = 10): array
 {
-    $recipients = mailRecipients($to, $cc);
+    $recipients = mailRecipients($to, $cc, $maxRecipients);
     $boundary = '=_Progre_' . bin2hex(random_bytes(18));
     $messageId = sprintf('<%s@%s>', bin2hex(random_bytes(16)), substr(strrchr($config['from_email'], '@') ?: '@localhost', 1));
     $headers = [
@@ -217,11 +217,11 @@ function processActivityClaim(array $config, array $claimed): array
     $identity = ['activity_email_protocol' => $protocol, 'email_id' => $email['id'],
         'worker_id' => $claimed['worker_id'], 'lock_token' => $email['lock_token']];
     try {
-        if (!in_array($protocol, [1, 2], true) || !empty($claimed['attachments'])
+        if (!in_array($protocol, [1, 2, 3], true) || !empty($claimed['attachments'])
             || array_key_exists('bcc', $email) || array_key_exists('bcc_recipients', $email)) {
             throw new RuntimeException('Invalid activity payload.');
         }
-        if ($protocol === 2) {
+        if ($protocol >= 2) {
             if (!is_array($email['to_recipients'] ?? null) || !is_array($email['cc_recipients'] ?? null)) {
                 throw new RuntimeException('Invalid activity recipients.');
             }
@@ -234,7 +234,7 @@ function processActivityClaim(array $config, array $claimed): array
             $to = (string)($email['destinatario'] ?? '');
             $cc = [];
         }
-        $mail = buildMail($config, $to, (string)$email['oggetto'], (string)$email['corpo'], [], $cc);
+        $mail = buildMail($config, $to, (string)$email['oggetto'], (string)$email['corpo'], [], $cc, $protocol === 3 ? 30 : 10);
         $attempted = true;
         if (!sendMessage($mail)) {
             $definitive = true;
@@ -296,7 +296,7 @@ function processOne(array $config, bool $reportsOnly = false, bool $activityOnly
     if (($reportsOnly ? 1 : 0) + ($activityOnly ? 1 : 0) + ($anomalyOnly ? 1 : 0) > 1) {
         throw new RuntimeException('Email worker modes are mutually exclusive.');
     }
-    $claimed = apiRequest($config, ['action' => 'claim', 'shipment_protocol' => 1, 'report_protocol' => 1, 'reports_only' => $reportsOnly, 'activity_email_protocol' => 1, 'activity_email_protocols' => [1, 2], 'activity_only' => $activityOnly, 'anomaly_only' => $anomalyOnly]);
+    $claimed = apiRequest($config, ['action' => 'claim', 'shipment_protocol' => 1, 'report_protocol' => 1, 'reports_only' => $reportsOnly, 'activity_email_protocol' => 1, 'activity_email_protocols' => [1, 2, 3], 'activity_only' => $activityOnly, 'anomaly_only' => $anomalyOnly]);
     if (($claimed['status'] ?? '') === 'idle') {
         return ['status' => 'idle'];
     }
@@ -392,7 +392,7 @@ try {
 
     if ($action === 'activity_email_capabilities') {
         // Keep the v1 flag so the worker can be upgraded before the backend.
-        respond(['activity_email_protocol' => 1, 'activity_email_protocols' => [1, 2],
+        respond(['activity_email_protocol' => 1, 'activity_email_protocols' => [1, 2, 3],
             'queue_enabled' => ($config['queue_enabled'] ?? false) === true]);
     }
 

@@ -1,4 +1,4 @@
-export const MAX_EMAIL_RECIPIENTS = 10;
+export const MAX_EMAIL_RECIPIENTS = 30;
 const EMAIL = /^[^\s<>;,"@]+@[^\s<>;,"@]+\.[^\s<>;,"@]+$/;
 const V2_EMAIL = /^[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 function requireValue(condition, message) {
@@ -19,7 +19,7 @@ export function normalizeEmailRecipients(input) {
   }
   requireValue(Array.isArray(input.to) && input.to.length > 0 && (!Object.hasOwn(input, 'cc') || Array.isArray(input.cc)), 'Indicare almeno un destinatario To e CC come lista.');
   const ccInput = input.cc ?? [];
-  requireValue(input.to.length + ccInput.length <= MAX_EMAIL_RECIPIENTS, 'Massimo 10 destinatari tra To e CC.');
+  requireValue(input.to.length + ccInput.length <= MAX_EMAIL_RECIPIENTS, `Massimo ${MAX_EMAIL_RECIPIENTS} destinatari tra To e CC.`);
   const to = input.to.map(value => address(value));
   const cc = ccInput.map(value => address(value));
   requireValue(new Set([...to, ...cc]).size === to.length + cc.length, 'Destinatari duplicati tra To e CC.');

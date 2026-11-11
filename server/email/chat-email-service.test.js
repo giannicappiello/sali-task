@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {prepareChatEmail,sendChatEmail,decideChatEmailDelegation,decideChatEmailHuman,hashChatEmailDelegation,getChatEmail} from './chat-email-service.js';
+import {prepareChatEmail,sendChatEmail,decideChatEmailDelegation,decideChatEmailHuman,hashChatEmailDelegation,getChatEmail,proposeChatEmailDelegation} from './chat-email-service.js';
 const id='11111111-1111-4111-8111-111111111111',other='22222222-2222-4222-8222-222222222222';
 const input={recipient:'one@example.test',subject:'Hello',body:'Text',idempotencyKey:'request_123'};
 test('chat prepare is task-free, explicit single-recipient text; rejects bypass fields',async()=>{
@@ -33,6 +33,13 @@ test('To and CC use a separate v2 RPC with canonical complete recipients', async
  const multi={to:[' One@Example.Test ','two@example.test'],cc:['COPY@example.test'],subject:'Subject',body:'Body',idempotencyKey:'request_multi'};
  await prepareChatEmail(auth,multi);
  assert.deepEqual(calls[0],['workspace_prepare_chat_email_v2',{p_to:['one@example.test','two@example.test'],p_cc:['copy@example.test'],p_subject:'Subject',p_body:'Body',p_idempotency_key:'request_multi'}]);
- for(const bad of [{recipient:'one@example.test'},{to:[]},{cc:'copy@example.test'},{cc:['ONE@example.test']},{to:['one@example.test','ONE@example.test']},{to:['one@example.test\r\n']},{to:Array.from({length:11},(_,i)=>`user${i}@example.test`)},{bcc:[]}]) await assert.rejects(prepareChatEmail(auth,{...multi,...bad}));
+ for(const bad of [{recipient:'one@example.test'},{to:[]},{cc:'copy@example.test'},{cc:['ONE@example.test']},{to:['one@example.test','ONE@example.test']},{to:['one@example.test\r\n']},{to:Array.from({length:31},(_,i)=>`user${i}@example.test`)},{bcc:[]}]) await assert.rejects(prepareChatEmail(auth,{...multi,...bad}));
  assert.equal(calls.length,1);
+});
+
+test('v3 proposal routes explicitly without changing legacy defaults',async()=>{
+ const calls=[];const auth={scoped:{rpc:async name=>{calls.push(name);return {data:{status:'proposed'}};}}};
+ await proposeChatEmailDelegation(auth);await proposeChatEmailDelegation(auth,{policyVersion:'chat-email-v2'});await proposeChatEmailDelegation(auth,{policyVersion:'chat-email-v3'});
+ assert.deepEqual(calls,['workspace_propose_email_delegation','workspace_propose_email_delegation_v2','workspace_propose_email_delegation_v3']);
+ await assert.rejects(proposeChatEmailDelegation(auth,{policyVersion:'chat-email-v4'}));
 });

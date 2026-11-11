@@ -18,7 +18,7 @@ export function activityEmailTools(auth) {
   };
   const canWrite = auth.profile?.ruoli?.amministratore_workspace === true || ['scrittura', 'amministrazione'].includes(auth.access?.module_levels?.attivita);
   if (canWrite && ['bozza', 'conferma'].includes(auth.capabilities?.role_ai_level)) tools.ACTIVITY_EMAIL_PROPOSE = {
-    description: 'Prepara una email per una attività accessibile, con destinatari To/CC verificati (massimo 10 totali), oggetto e testo. Richiede richiesta esplicita dell’utente, permesso email specifico e conferma umana separata BRAIN_REVIEW kind=email. Non invia. Conserva idempotencyKey nei tentativi e leggi lo stato dopo un esito incerto. Non autorizza invii ricorrenti.',
+    description: 'Prepara una email per una attività accessibile, con destinatari To/CC verificati (massimo 30 totali), oggetto e testo. Richiede richiesta esplicita dell’utente, permesso email specifico e conferma umana separata BRAIN_REVIEW kind=email. Non invia. Conserva idempotencyKey nei tentativi e leggi lo stato dopo un esito incerto. Non autorizza invii ricorrenti.',
     inputSchema, effect: 'propose', execute: async input => ({ email: await proposeActivityEmail(auth, input, { viaAI: true }), requiresConfirmation: true, reviewKind: 'email', sent: false }),
   };
   return tools;

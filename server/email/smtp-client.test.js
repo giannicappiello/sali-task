@@ -97,3 +97,27 @@ test('canonical envelope cannot hide partial delivery or a truncated To/CC list'
   assert.equal(error.code,'EPARTIALDELIVERY');assert.equal(isPermanentSmtpError(error),false);return true;
  });
 });
+
+test('offline SMTP stream includes all 30 To+CC recipients in MIME and envelope',async()=>{
+ const {default:nodemailer}=await import('nodemailer');
+ const stream=nodemailer.createTransport({streamTransport:true,buffer:true,newline:'windows'});
+ const to=Array.from({length:15},(_,i)=>`to${i}@example.test`);
+ const cc=Array.from({length:15},(_,i)=>`cc${i}@example.test`);
+ let built;let sends=0;
+ await client(async message=>{
+  sends++;built=await stream.sendMail(message);
+  return {...built,accepted:built.envelope.to,rejected:[]};
+ }).send({...payload,to,cc,maxRecipients:30});
+ assert.equal(sends,1);assert.deepEqual(built.envelope.to,[...to,...cc]);
+ const headers=built.message.toString().split('\r\n\r\n')[0].replace(/\r\n[ \t]+/g,' ');
+ const toHeader=headers.match(/(?:^|\r\n)To: (.*)/)[1];
+ const ccHeader=headers.match(/(?:^|\r\n)Cc: (.*)/)[1];
+ for(const address of to)assert.ok(toHeader.includes(address));
+ for(const address of cc)assert.ok(ccHeader.includes(address));
+ assert.doesNotMatch(headers,/(?:^|\r\n)Bcc:/i);
+});
+
+test('30-recipient transport opt-in still rejects 31 before handoff',async()=>{
+ const smtp=client(()=>assert.fail('must not send'));
+ await assert.rejects(smtp.send({...payload,to:Array.from({length:31},(_,i)=>`person${i}@example.test`),cc:[],maxRecipients:30}),error=>error.code==='EENVELOPE');
+});

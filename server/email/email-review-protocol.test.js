@@ -10,13 +10,13 @@ const auth = { profile: { id }, capabilities: { internal_data: true, role_ai_lev
 const request = body => ({ method: 'POST', body });
 
 for (const kind of ['manual', 'email', 'email-delegation']) {
- for (const requiredProtocol of [1, 2]) {
+ for (const requiredProtocol of [1, 2, 3]) {
   test(`${kind} human review checks protocol ${requiredProtocol} before writing and preserves its receipt`, async () => {
    const checks = [], writes = [], scheduled = [];
    const row = { id, author_id: id, source_kind: kind === 'manual' ? 'activity' : 'chat', via_ai: kind !== 'manual', status: 'proposed', payload_hash: hash,
-    recipient: 'one@example.invalid', to_recipients: requiredProtocol === 2 ? ['one@example.invalid', 'two@example.invalid'] : null,
-    cc_recipients: requiredProtocol === 2 ? ['copy@example.invalid'] : null,
-    ...(requiredProtocol === 2 ? { transport_protocol_version: 2 } : {}),
+    recipient: 'one@example.invalid', to_recipients: requiredProtocol >= 2 ? ['one@example.invalid', 'two@example.invalid'] : null,
+    cc_recipients: requiredProtocol >= 2 ? ['copy@example.invalid'] : null,
+    ...(requiredProtocol >= 2 ? { transport_protocol_version: requiredProtocol } : {}),
     policy_version: `chat-email-v${requiredProtocol}`, policy_hash: hash };
    let supported = [1];
    const transport = async options => {
@@ -37,13 +37,13 @@ for (const kind of ['manual', 'email', 'email-delegation']) {
    const preview = await handler(request({ action: 'confirmation', ...(kind === 'manual' ? {} : { kind }), id }), dependencies);
    assert.equal(checks.length, 0); assert.equal(writes.length, 0);
    const input = { action: 'decide', receipt: preview.receipt, decision: 'confirm' };
-   if (requiredProtocol === 2) {
+   if (requiredProtocol >= 2) {
     await assert.rejects(handler(request(input), dependencies), error => error.status === 409 && error.code === 'EMAIL_TRANSPORT_NOT_READY');
     assert.equal(writes.length, 0); assert.equal(scheduled.length, 0);
-    supported = [1, 2];
+    supported = [1, 2, 3];
    }
    const outcome = await handler(request(input), dependencies);
-   assert.deepEqual(checks, Array.from({ length: requiredProtocol === 2 ? 2 : 1 }, () => ({ requiredProtocol })));
+   assert.deepEqual(checks, Array.from({ length: requiredProtocol >= 2 ? 2 : 1 }, () => ({ requiredProtocol })));
    assert.deepEqual(writes, [{ id, confirm: true, expectedHash: hash }]);
    assert.equal(kind === 'email-delegation' ? outcome.delegation.status : outcome.email.status, kind === 'email-delegation' ? 'active' : 'queued');
    await Promise.all(scheduled);

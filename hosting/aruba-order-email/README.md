@@ -92,8 +92,10 @@ si collega dalla pagina Workspace `/settings/commercial-reports`.
 
 ## Email Workspace: più destinatari To e CC
 
-Il worker supporta `activity_email_protocol` 1 (storico, un destinatario) e 2
-(liste `to_recipients` e `cc_recipients`). Il limite è 10 indirizzi complessivi;
+Il worker supporta `activity_email_protocol` 1 (storico, un destinatario), 2
+(liste `to_recipients` e `cc_recipients`, massimo 10 indirizzi) e 3 (massimo 30
+indirizzi complessivi To + CC per le normali email Workspace). Le code report,
+anomalie e ordini mantengono i propri limiti e controlli;
 indirizzi duplicati, header injection e BCC vengono rifiutati prima dell'invio.
 `mail()` riceve tutti i To nel primo argomento e i CC nell'header `Cc`, usato
 anche per la consegna dal trasporto PHP. Non vengono create email separate.
@@ -102,17 +104,19 @@ Per aggiornare un'installazione che già supporta le email Workspace:
 
 1. Dopo approvazione del rilascio, aggiornare **solo `worker.php`**. Non cambiare
    `config.php`, segreti, mittente o cron. Il nuovo worker mantiene
-   `activity_email_protocol: 1` e aggiunge `activity_email_protocols: [1, 2]` sia
+   `activity_email_protocol: 1` e aggiunge `activity_email_protocols: [1, 2, 3]` sia
    alle capability sia alle richieste di claim: può quindi lavorare con il
    backend precedente senza consumare code incompatibili.
 2. Verificare soltanto con il `GET` autenticato
-   `?action=activity_email_capabilities`: deve dichiarare `[1, 2]` e
+   `?action=activity_email_capabilities`: deve dichiarare `[1, 2, 3]` e
    `queue_enabled: true`. Questo controllo non preleva né invia messaggi.
-3. Applicare la migrazione destinatari v2, quindi pubblicare il backend e la UI.
-   Il backend richiede capability 2 per confermare/accodare le proposte v2 e usa
-   `workspace_claim_email_v2` esclusivamente per consumer compatibili. La vecchia
-   RPC resta vincolata alle righe protocollo 1. Una mail v2 non può essere
-   prelevata da un vecchio worker e inviata soltanto al primo destinatario.
+3. Applicare le migrazioni destinatari v2 e limite 30, quindi pubblicare backend
+   e UI. Il backend richiede capability 3 per le nuove proposte con oltre 10
+   destinatari; `workspace_claim_email_v2` filtra le righe per la versione
+   dichiarata dal consumer. La vecchia RPC resta vincolata al protocollo 1 e
+   i consumer v2 non possono prelevare righe v3. Le righe storiche v2 mantengono
+   il massimo di 10 destinatari. L'aggiornamento dei worker precede l'abilitazione
+   di invii v3; il controllo GET conferma la compatibilità senza elaborare code.
 4. L'eventuale verifica reale richiede un messaggio e destinatari esplicitamente
    approvati. Non usare `action=test`, POST o cron come test di sola readiness.
 

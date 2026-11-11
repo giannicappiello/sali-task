@@ -111,11 +111,11 @@ test('v2 SMTP sends every To and CC in one attempt',async()=>{
   return {messageId:'multi-id'};
  }}});
  assert.equal(result.status,'accepted');assert.equal(sends,1);
- assert.deepEqual(db.calls[1],{name:'workspace_claim_email_v2',args:{p_worker:'test',p_transport_protocol_version:2}});
+ assert.deepEqual(db.calls[1],{name:'workspace_claim_email_v2',args:{p_worker:'test',p_transport_protocol_version:3}});
 });
 test('unsupported consumers never claim; legacy consumers use SQL-filtered legacy RPC',async()=>{
  const db=dbMock();
- await assert.rejects(claimActivityForHttpWorker(db,'test',3));
+ await assert.rejects(claimActivityForHttpWorker(db,'test',4));
  assert.equal(db.calls.length,0);
  await claimActivityForHttpWorker(db,'test',1);
  assert.equal(db.calls[1].name,'workspace_claim_email');assert.deepEqual(db.calls[1].args,{p_worker:'test'});
@@ -137,7 +137,7 @@ test('malformed recipient arrays and CRLF fail before SMTP without retry',async(
  for(const changed of [
   {to_recipients:undefined}, {cc_recipients:undefined},
   {to_recipients:['first@example.test\r\nBcc:evil@example.test']},
-  {cc_recipients:['FIRST@example.test']}, {transport_protocol_version:3},
+  {cc_recipients:['FIRST@example.test']}, {transport_protocol_version:4},
   {transport_protocol_version:1},
  ]){
   const db=dbMock({claimedJob:{...multiJob,...changed}});
@@ -160,16 +160,47 @@ test('v2 HTTP acknowledgements preserve terminal lifecycle',async()=>{
 test('HTTP negotiation accepts v2 and update-first PHP while preserving legacy filtering',async()=>{
  const old=process.env.ARUBA_EMAIL_WORKER_SECRET;process.env.ARUBA_EMAIL_WORKER_SECRET='unit-test';
  try {
-  for(const [protocol,extra,expectedRpc] of [[1,{},'workspace_claim_email'],[2,{},'workspace_claim_email_v2'],[1,{activity_email_protocols:[1,2]},'workspace_claim_email_v2'],[1,{activity_email_protocols:['2']},'workspace_claim_email']]){
+  for(const [protocol,extra,expectedRpc] of [[1,{},'workspace_claim_email'],[2,{},'workspace_claim_email_v2'],[3,{},'workspace_claim_email_v2'],[1,{activity_email_protocols:[1,2,3]},'workspace_claim_email_v2'],[1,{activity_email_protocols:[1,2]},'workspace_claim_email_v2'],[1,{activity_email_protocols:['2']},'workspace_claim_email']]){
    const calls=[];
    const handler=createEmailWorkerHandler({getClient:()=>({rpc:async(name,args)=>{calls.push({name,args});return {data:null};}})});
    const res={statusCode:200,status(code){this.statusCode=code;return this;},json(value){this.body=value;return this;}};
    await handler({method:'POST',headers:{authorization:'Bearer unit-test'},body:{action:'claim',activity_only:true,activity_email_protocol:protocol,...extra}},res);
    assert.equal(res.statusCode,200);assert.deepEqual(calls.map(c=>c.name),['workspace_expire_email_claims',expectedRpc]);
+   if(expectedRpc==='workspace_claim_email_v2') assert.equal(calls[1].args.p_transport_protocol_version,extra.activity_email_protocols?.includes(3)||protocol===3?3:2);
   }
   const handler=createEmailWorkerHandler({getClient:()=>({rpc:async()=>assert.fail('must not claim')})});
   const res={statusCode:200,status(code){this.statusCode=code;return this;},json(value){this.body=value;return this;}};
-  await handler({method:'POST',headers:{authorization:'Bearer unit-test'},body:{action:'claim',activity_only:true,activity_email_protocol:3}},res);
+  await handler({method:'POST',headers:{authorization:'Bearer unit-test'},body:{action:'claim',activity_only:true,activity_email_protocol:4}},res);
   assert.equal(res.statusCode,400);
  } finally {if(old===undefined)delete process.env.ARUBA_EMAIL_WORKER_SECRET;else process.env.ARUBA_EMAIL_WORKER_SECRET=old;}
+});
+
+test('v3 sends 30 To+CC once; v2 still rejects 11 and v3 rejects 31',async()=>{
+ const addresses=Array.from({length:31},(_,i)=>`person${i}@example.test`);
+ for(const [version,total,expected] of [[2,10,'accepted'],[2,11,'failed'],[3,11,'accepted'],[3,30,'accepted'],[3,31,'failed']]){
+  const claimedJob={...multiJob,transport_protocol_version:version,to_recipients:addresses.slice(0,5),cc_recipients:addresses.slice(5,total)};
+  const db=dbMock({claimedJob});let sends=0;
+  const result=await processNextActivityEmailJob({supabase:db,workerId:'test',smtp:{async send(payload){
+   sends++;assert.equal(payload.to.length+payload.cc.length,total);assert.equal(payload.maxRecipients,version===3?30:undefined);return {messageId:'test'};
+  }}});
+  assert.equal(result.status,expected);assert.equal(sends,expected==='accepted'?1:0);
+ }
+});
+test('v3 HTTP payload and acknowledgement preserve all recipients',async()=>{
+ const claimedJob={...multiJob,transport_protocol_version:3,to_recipients:Array.from({length:29},(_,i)=>`to${i}@example.test`)};
+ const db=dbMock({claimedJob});
+ const payload=await claimActivityForHttpWorker(db,'test',3);
+ assert.equal(db.calls[1].args.p_transport_protocol_version,3);
+ assert.equal(payload.activity_email_protocol,3);
+ assert.deepEqual(payload.email.to_recipients,claimedJob.to_recipients);
+ assert.deepEqual(payload.email.cc_recipients,claimedJob.cc_recipients);
+ await activityWorkerAction(db,{activity_email_protocol:3,email_id:payload.email.id,lock_token:job.lock_token,action:'accepted'});
+ assert.equal(db.calls.at(-1).args.p_status,'accepted');
+});
+test('v3 readiness refuses v2 workers without triggering a send',async()=>{
+ const calls=[];
+ const result=await triggerActivityEmailWorker({requiredProtocol:3,environment:{ARUBA_EMAIL_WORKER_URL:'https://example.test/worker.php',ARUBA_EMAIL_WORKER_SECRET:'test'},fetchImpl:async(url,options)=>{
+  calls.push(options);return Response.json({activity_email_protocol:1,activity_email_protocols:[1,2],queue_enabled:true});
+ }});
+ assert.deepEqual(result,{status:'unsupported'});assert.equal(calls.length,1);assert.equal(calls[0].method,'GET');
 });

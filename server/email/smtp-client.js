@@ -45,12 +45,14 @@ export function smtpSettings(getEnv = runtimeEnv) {
 
 // Validate before the SMTP handoff. Reject duplicates rather than silently
 // moving a recipient from CC to To or altering an approved payload.
-export function normalizeTransportRecipients(to, cc = []) {
+export function normalizeTransportRecipients(to, cc = [], maxRecipients = 10) {
   try {
+    if (![10, 30].includes(maxRecipients)) throw new Error('Invalid recipient limit.');
     if (typeof to === 'string' && Array.isArray(cc) && cc.length === 0) {
       return {to:[normalizeEmailRecipients({recipient:to}).recipient], cc:[]};
     }
     const recipients = normalizeEmailRecipients({to:typeof to === 'string' ? [to] : to, cc});
+    if (recipients.to.length + recipients.cc.length > maxRecipients) throw new Error('Too many recipients.');
     return {to:recipients.to, cc:recipients.cc};
   } catch {
     throw Object.assign(new Error('Destinatari email non validi.'), {code:'EENVELOPE'});
@@ -80,9 +82,9 @@ export function createSmtpClient({
   });
 
   return {
-    async send({ to, cc = [], bcc, subject, text, html, attachments = [] }) {
+    async send({ to, cc = [], bcc, subject, text, html, attachments = [], maxRecipients = 10 }) {
       if (bcc !== undefined) throw Object.assign(new Error('BCC non supportato.'), {code:'EENVELOPE'});
-      const recipients = normalizeTransportRecipients(to, cc);
+      const recipients = normalizeTransportRecipients(to, cc, maxRecipients);
       if (typeof subject !== 'string' || /[\r\n]/.test(subject)) {
         throw Object.assign(new Error('Oggetto email non valido.'), {code:'EENVELOPE'});
       }

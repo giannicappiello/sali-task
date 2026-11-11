@@ -50,7 +50,7 @@ test('one-off chat email human review uses no activity permission or task',async
 test('multi-recipient capability and send require protocol 2 transport',async()=>{
  let sent=0;const checked=[];const tools=chatEmailTools(auth,{transport:async({requiredProtocol})=>{checked.push(requiredProtocol);return requiredProtocol===1?{ready:true,status:'ready'}:{ready:false,status:'unsupported'};},service:{getChatEmailCapability:async()=>({canSend:true,canSendMultiple:true}),getChatEmail:async()=>({id,transport_protocol_version:2}),sendChatEmail:async()=>{sent++;}},schedule:()=>assert.fail('must not dispatch')});
  const capability=await tools.WORKSPACE_EMAIL_CAPABILITY.execute({});assert.equal(capability.canSend,true);assert.equal(capability.canSendMultiple,false);
- await assert.rejects(tools.WORKSPACE_EMAIL_SEND.execute({id,expectedHash:hash}),/trasporto Workspace/);assert.equal(sent,0);assert.deepEqual(checked,[1,2,2]);
+ await assert.rejects(tools.WORKSPACE_EMAIL_SEND.execute({id,expectedHash:hash}),/trasporto Workspace/);assert.equal(sent,0);assert.deepEqual(checked,[1,2,3,2]);
 });
 
 test('recipient schema accepts either legacy recipient or To/CC and never both',()=>{

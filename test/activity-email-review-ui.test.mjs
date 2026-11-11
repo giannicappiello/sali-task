@@ -194,8 +194,8 @@ test('unknown confirmation read errors do not render arbitrary server messages',
 
 const recipients = label => [...host.querySelectorAll(`ul[aria-label="Destinatari ${label}"] > li`)].map(node => node.textContent);
 const multiProposal = id => ({ ...proposal(id), recipient: 'legacy-not-an-extra@example.com',
- to_recipients: Array.from({ length: 6 }, (_, index) => `to-${index + 1}@example.com`),
- cc_recipients: Array.from({ length: 4 }, (_, index) => `cc-${index + 1}@example.com`), transport_protocol_version: 2 });
+ to_recipients: Array.from({ length: 16 }, (_, index) => `to-${index + 1}@example.com`),
+ cc_recipients: Array.from({ length: 14 }, (_, index) => `cc-${index + 1}@example.com`), transport_protocol_version: 3 });
 
 test('multi-recipient review shows every To and CC, keeps content immutable and submits only the signed receipt', async () => {
  const email = multiProposal('mail-1'), calls = [];
@@ -261,6 +261,27 @@ test('v2 scope and consent describe To/CC and the total limit, without inheritin
   await click(authorize); assert.equal(calls.filter(c => c.action === 'decide').length, 0);
   await consent(); await click(authorize, true);
   assert.deepEqual(calls.filter(c => c.action === 'decide'), [{ action: 'decide', receipt: 'receipt-delegation-2', decision: 'confirm' }]);
+ } finally { await cleanup(); }
+});
+
+test('v3 scope and consent describe To/CC and the total limit, without inheriting v2 consent', async () => {
+ const calls = [], row = { ...delegation, id: 'delegation-3', policy_version: 'chat-email-v3' };
+ try {
+  await mount(async (_session, input) => {
+   calls.push(input);
+   if (input.action === 'confirmation') return { ...prepared(input.id), proposal: input.id === 'delegation-1' ? { ...delegation, policy_version: 'chat-email-v2' } : row };
+   return { delegation: { ...row, status: 'active' } };
+  }, 'email-delegation', 'delegation-1');
+  await consent();
+  reviewFixture.search = '?view=review&kind=email-delegation&proposalId=delegation-3'; await render();
+  assert.match(host.textContent, /uno o più destinatari in A \(To\) e CC, fino a 30 indirizzi complessivi/);
+  assert.match(host.textContent, /visibili agli altri destinatari/);
+  assert.match(host.textContent, /non vengono estese automaticamente/);
+  assert.equal(host.querySelector('input').checked, false);
+  assert.equal(button(authorize).disabled, true);
+  await click(authorize); assert.equal(calls.filter(c => c.action === 'decide').length, 0);
+  await consent(); await click(authorize, true);
+  assert.deepEqual(calls.filter(c => c.action === 'decide'), [{ action: 'decide', receipt: 'receipt-delegation-3', decision: 'confirm' }]);
  } finally { await cleanup(); }
 });
 

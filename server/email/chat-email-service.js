@@ -47,8 +47,8 @@ export async function listChatEmails(auth,{offset=0}={}) {
  return {emails:rows.slice(0,20),nextOffset:rows.length>20?offset+20:null};
 }
 export async function proposeChatEmailDelegation(auth,{policyVersion='chat-email-v1'}={}) {
- assert(['chat-email-v1','chat-email-v2'].includes(policyVersion),'Versione delega non valida.');
- return checked(await auth.scoped.rpc(policyVersion==='chat-email-v2'?'workspace_propose_email_delegation_v2':'workspace_propose_email_delegation'));
+ assert(['chat-email-v1','chat-email-v2','chat-email-v3'].includes(policyVersion),'Versione delega non valida.');
+ return checked(await auth.scoped.rpc(policyVersion==='chat-email-v1'?'workspace_propose_email_delegation':`workspace_propose_email_delegation_${policyVersion.slice(-2)}`));
 }
 export async function getChatEmailDelegation(auth,id) {
  const row=checked(await auth.scoped.from('workspace_email_delegations').select(DELEGATION_COLUMNS).eq('id',uuid(id)).eq('author_id',actor(auth)).maybeSingle());

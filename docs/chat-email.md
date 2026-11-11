@@ -4,7 +4,7 @@
 
 L'utente chiede in chat e Progre AI prepara, invia e controlla il risultato usando Workspace. Non serve creare o aprire una task. Il pannello email del prototipo attivita resta scollegato dall'interfaccia.
 
-Il mittente resta quello aziendale configurato. Ogni richiesta prepara **una sola email di testo**, con almeno un destinatario A (To), CC facoltativi e **massimo 10 indirizzi complessivi**. Non sono previsti BCC, allegati, campagne o invii ricorrenti.
+Il mittente resta quello aziendale configurato. Ogni richiesta prepara **una sola email di testo**, con almeno un destinatario A (To), CC facoltativi e **massimo 30 indirizzi complessivi**. Non sono previsti BCC, allegati, campagne o invii ricorrenti.
 
 ## Ricerca degli indirizzi
 
@@ -21,20 +21,22 @@ La copertura e quella dichiarata dalla risposta, limitata da RLS, moduli e ambit
 - Nuova: `to: ["persona@example.com", "collega@example.com"]`, `cc: ["copia@example.com"]` facoltativo, oltre a `subject`, `body` e `idempotencyKey`.
 - Legacy: `recipient: "persona@example.com"`, senza `to` o `cc`, con gli stessi altri campi.
 
-Oggetto fino a 200 caratteri e corpo fino a 12000. Gli indirizzi delle nuove liste vengono normalizzati dal backend. Duplicati, anche tra To e CC, liste vuote To, oltre 10 indirizzi, header injection e formati misti sono rifiutati, mai corretti eliminando destinatari in silenzio. L'ordine e il ruolo To/CC restano parte del contenuto approvato. Tutti i destinatari vedono gli indirizzi To e CC.
+Oggetto fino a 200 caratteri e corpo fino a 12000. Gli indirizzi delle nuove liste vengono normalizzati dal backend. Duplicati, anche tra To e CC, liste vuote To, oltre 30 indirizzi, header injection e formati misti sono rifiutati, mai corretti eliminando destinatari in silenzio. L'ordine e il ruolo To/CC restano parte del contenuto approvato. Tutti i destinatari vedono gli indirizzi To e CC.
 
-Le nuove liste usano `transport_protocol_version=2` e vengono persistite in `to_recipients` e `cc_recipients`. Gli storici e le richieste legacy restano protocollo 1, con array null e `recipient` singolo. Nessun ricalcolo dell'hash o modifica delle vecchie receipt. Il campo legacy presente sulle nuove righe non e un destinatario aggiuntivo.
+Le liste fino a 10 destinatari usano `transport_protocol_version=2`; le liste da 11 a 30 usano `transport_protocol_version=3` e vengono persistite in `to_recipients` e `cc_recipients`. Gli storici e le richieste legacy restano protocollo 1, con array null e `recipient` singolo. Nessun ricalcolo dell'hash o modifica delle vecchie receipt. Il campo legacy presente sulle nuove righe non e un destinatario aggiuntivo.
 
-## Due deleghe distinte
+## Tre deleghe distinte
 
 La delega personale non e attiva per default. Il consenso alla connessione non equivale al consenso per gli invii.
 
 - `chat-email-v1`: una email a **un solo destinatario senza CC**. Le deleghe esistenti conservano contenuto, hash e ambito. Possono coprire anche una nuova lista con un solo To e CC vuoto, perche l'ambito non cambia.
 - `chat-email-v2`: una email a **uno o piu destinatari To/CC, massimo 10 totali**. Richiede una nuova proposta e un consenso personale distinto. Puo coesistere con v1; v1 non viene aggiornata o ampliata automaticamente.
 
-Entrambe valgono solo per email testuali richieste espressamente dal titolare nella chat, per i destinatari e lo scopo indicati. Non autorizzano messaggi spontanei, automatici, ricorrenti, massivi o con allegati. Restano applicabili le conferme previste per dati sensibili e comunicazioni ad alto impatto.
+- `chat-email-v3`: una email a **massimo 30 destinatari complessivi To/CC**. Richiede una nuova proposta e consenso personale distinto. v1 e v2 conservano esattamente ambito, contenuto e hash; non sono ampliate o riattivate automaticamente.
 
-`WORKSPACE_EMAIL_DELEGATION_PROPOSE` seleziona `policyVersion` esplicitamente, per esempio `chat-email-v2` per richiedere To/CC. Ometterlo mantiene la compatibilita v1. Lo strumento prepara una proposta, non la attiva. `BRAIN_REVIEW kind=email-delegation` apre il riepilogo personale: il checkbox non e preselezionato, descrive la versione corrente e non trasferisce il consenso a una nuova receipt o proposta. L'assistente non puo cliccarlo o automatizzarlo. La stessa revisione permette la revoca umana.
+Tutte valgono solo per email testuali richieste espressamente dal titolare nella chat, per i destinatari e lo scopo indicati. Non autorizzano messaggi spontanei, automatici, ricorrenti, massivi o con allegati. Restano applicabili le conferme previste per dati sensibili e comunicazioni ad alto impatto.
+
+`WORKSPACE_EMAIL_DELEGATION_PROPOSE` seleziona `policyVersion` esplicitamente, per esempio `chat-email-v3` per richiedere fino a 30 To/CC. Ometterlo mantiene la compatibilita v1. Lo strumento prepara una proposta, non la attiva. `BRAIN_REVIEW kind=email-delegation` apre il riepilogo personale: il checkbox non e preselezionato, descrive la versione corrente e non trasferisce il consenso a una nuova receipt o proposta. L'assistente non puo cliccarlo o automatizzarlo. La stessa revisione permette la revoca umana.
 
 ## Preparazione, invio e revisione
 
@@ -53,7 +55,7 @@ Il contenuto approvato, le liste e i loro ruoli, il protocollo, il titolare, la 
 
 La revisione mostra gli indirizzi come testo, senza interpretare HTML. Doppi click non duplicano le decisioni. Dopo timeout i pulsanti restano bloccati; cambiare proposta o usare Indietro/Avanti rilegge lo stato canonico e non riutilizza consenso o receipt di un altro riepilogo. Solo l'errore esplicito `EMAIL_TRANSPORT_NOT_READY` indica che nessuna email e stata accodata e consente un nuovo click personale.
 
-La disponibilita Aruba viene letta con GET, senza drenare code. Il protocollo 2 e richiesto per ogni nuova proposta a liste, anche con un solo To, e per attivare v2. Un worker che dichiara solo protocollo 1 non puo ricevere nuove conferme protocollo 2. Lettura esiti, rifiuto e revoca restano disponibili. Gli invii protocollo 1 continuano con il vecchio contratto.
+La disponibilita Aruba viene letta con GET, senza drenare code. Il protocollo 2 e richiesto per liste fino a 10, anche con un solo To, e per attivare v2. Il protocollo 3 e richiesto per liste da 11 a 30 e per attivare v3. Il claim SQL esclude le righe protocollo 3 dai worker precedenti, anche durante un rilascio parziale. Un worker che dichiara solo protocollo 1 non puo ricevere nuove conferme protocollo 2. Lettura esiti, rifiuto e revoca restano disponibili. Gli invii protocollo 1 continuano con il vecchio contratto.
 
 Il trasporto SMTP/Aruba invia un solo messaggio con To e CC distinti, mantenendo isolate le code ordini, DDT e report. `queued` significa accodato; `accepted` significa accettato dal server, non consegnato a ciascuno dei destinatari. Esiti ambigui o parziali richiedono verifica e non autorizzano un nuovo invio a tutto il gruppo.
 
@@ -61,10 +63,10 @@ Il trasporto SMTP/Aruba invia un solo messaggio con To e CC distinti, mantenendo
 
 Questo sviluppo locale non applica migrazioni, non pubblica codice, non cambia il plugin installato, non attiva deleghe e non invia email reali. Prima dell'uso occorrono, con autorizzazione distinta:
 
-- Migrazione `20261109182211_email_to_cc.sql` dopo le migrazioni email v1 esistenti, con verifica di RLS, grant, immutabilita e dati storici.
+- Migrazione dedicata `20261111194321_email_thirty_recipients.sql` dopo `20261109182211_email_to_cc.sql`, con verifica di RLS, grant, immutabilita e dati storici. Non applicare indiscriminatamente migrazioni pendenti estranee.
 - Rilascio coordinato backend/frontend/worker. Conservare mittente e configurazione segreta esistenti.
-- Verifica GET della capability protocollo 2 e aggiornamento del catalogo plugin/skill, se obsoleto. Non cambiare permessi globali per un catalogo vecchio.
-- Nuova attivazione personale v2 se si desidera l'invio multi-destinatario dalla chat. Nessuna attivazione implicita delle deleghe v1.
+- Verifica GET della capability protocollo 3 e aggiornamento del catalogo plugin/skill, se obsoleto. Non cambiare permessi globali per un catalogo vecchio.
+- Nuova attivazione personale v3 per gli invii da 11 a 30 destinatari dalla chat, oppure approvazione umana della singola email. Nessuna attivazione implicita delle deleghe v1/v2.
 - Per un collaudo reale, destinatari, contenuto e invio esplicitamente approvati; verificare separatamente accettazione e ricezione.
 
 Lo stato operativo di produzione va riletto al rilascio: la presenza del codice o un test locale non prova che migrazione, worker e plugin siano gia aggiornati.
@@ -78,4 +80,12 @@ node --test test/activity-email-review-ui.test.mjs test/activity-email-ui.test.m
 npm run build
 ```
 
-I test DOM coprono liste complete fino al limite, fallback legacy e CC null, HTML injection, consenso distinto v1/v2, receipt invariata, doppi click, timeout, cambio utente e navigazione Indietro/Avanti simulata. I test handler verificano il gate protocollo 1/2 prima delle scritture e la revoca senza trasporto. Questi test non sostituiscono il collaudo browser e il rilascio coordinato.
+I test DOM coprono liste complete fino al limite, fallback legacy e CC null, HTML injection, consenso distinto v1/v2/v3, receipt invariata, doppi click, timeout, cambio utente e navigazione Indietro/Avanti simulata. I test handler verificano il gate protocollo 1/2/3 prima delle scritture e la revoca senza trasporto. Questi test non sostituiscono il collaudo browser e il rilascio coordinato.
+
+## Limiti e rilascio isolato
+
+`maxRecipients=30` indica il limite tecnico. `authorizedMaxRecipients` indica il limite coperto dalle deleghe attive dell'utente, mentre `canSendThirty` richiede sia v3 attiva sia trasporto protocollo 3 pronto. Un vecchio consenso v2 resta valido fino a 10.
+
+Il limite dei report commerciali, i relativi piani, destinatari, cron e gating non cambiano. I trasporti condivisi mantengono il limite precedente per report, ordini e DDT; solo le email ordinarie protocollo 3 usano il limite 30.
+
+Il repo e condiviso con il progetto Vercel Club: un push Git puo creare deploy anche per Club. Per un rilascio circoscritto usare il progetto Workspace esplicito, migrazione dedicata e worker aggiornato; non eseguire `deploy:production` senza aver controllato tutte le migrazioni collegate. Nessuna pubblicazione o attivazione segue automaticamente dai test locali.

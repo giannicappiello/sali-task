@@ -77,12 +77,14 @@ return async function handler(req, res) {
 
     if (action === "claim") {
       const id = workerId(req);
-      // New PHP workers keep the legacy version flag for update-first rollouts.
-      // Only explicitly advertised v2 consumers may claim v2 rows.
-      const activityProtocol = req.body?.activity_email_protocol === 2
-        || (req.body?.activity_email_protocol === 1 && Array.isArray(req.body?.activity_email_protocols)
-          && req.body.activity_email_protocols.includes(2)) ? 2 : req.body?.activity_email_protocol;
-      if((req.body?.activity_only === true || req.body?.activity_email_protocol != null) && ![1, 2].includes(activityProtocol)) return res.status(400).json({error:'Activity protocol required.'});
+      // Preserve the legacy flag for update-first rollouts. Select only a
+      // protocol explicitly advertised by the consumer, never infer v3 from v2.
+      const advertised = req.body?.activity_email_protocols;
+      const requested = req.body?.activity_email_protocol;
+      const activityProtocol = [1, 2, 3].includes(requested) && Array.isArray(advertised)
+        ? [3, 2, 1].find(value => value === requested || advertised.includes(value))
+        : requested;
+      if((req.body?.activity_only === true || requested != null) && ![1, 2, 3].includes(activityProtocol)) return res.status(400).json({error:'Activity protocol required.'});
       if(req.body?.activity_only !== true && req.body?.report_protocol===1) {
         const report=await claimCommercialEmail(supabase,id);
         if(report)return res.status(200).json(report);
@@ -94,7 +96,7 @@ return async function handler(req, res) {
         return res.status(200).json(anomaly||{status:'idle'});
       }
       if(req.body?.reports_only===true)return res.status(200).json({status:'idle'});
-      if([1, 2].includes(activityProtocol)) {
+      if([1, 2, 3].includes(activityProtocol)) {
         const activity = await claimActivityForHttpWorker(supabase,id,activityProtocol);
         if(activity) return res.status(200).json(activity);
       }
@@ -180,10 +182,10 @@ return async function handler(req, res) {
     return res.status(400).json({ error: "Azione non riconosciuta." });
   } catch (error) {
     console.error("Aruba order email worker API error", {
-      error: String(req.body?.email_id || '').startsWith('activity:') || [1, 2].includes(req.body?.activity_email_protocol) ? 'Activity email worker failed' : error.message,
+      error: String(req.body?.email_id || '').startsWith('activity:') || [1, 2, 3].includes(req.body?.activity_email_protocol) ? 'Activity email worker failed' : error.message,
       action: req.body?.action || null,
     });
-    if (String(req.body?.email_id || '').startsWith('activity:') || [1, 2].includes(req.body?.activity_email_protocol)) return res.status(500).json({error:'Activity email worker failed.'});
+    if (String(req.body?.email_id || '').startsWith('activity:') || [1, 2, 3].includes(req.body?.activity_email_protocol)) return res.status(500).json({error:'Activity email worker failed.'});
     return res.status(500).json({ error: error.message || "Errore worker email." });
   }
 };

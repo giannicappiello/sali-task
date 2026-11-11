@@ -48,6 +48,10 @@ const CHAT_EMAIL_POLICIES = {
   scope: 'Autorizzi Progre AI a inviare per tuo conto una email di testo a uno o più destinatari in A (To) e CC, fino a 10 indirizzi complessivi, con il mittente aziendale configurato, soltanto quando lo chiedi espressamente in chat e ai destinatari indicati nella richiesta. Gli indirizzi in A e CC sono visibili agli altri destinatari. Non autorizzi BCC, messaggi automatici, ricorrenti, massivi o allegati. Puoi revocare la delega.',
   consent: 'Ho letto l’ambito della delega e autorizzo gli invii richiesti espressamente in chat a uno o più destinatari in A (To) e CC, fino a 10 indirizzi complessivi.',
  },
+ 'chat-email-v3': {
+  scope: 'Autorizzi Progre AI a inviare per tuo conto una email di testo a uno o più destinatari in A (To) e CC, fino a 30 indirizzi complessivi, con il mittente aziendale configurato, soltanto quando lo chiedi espressamente in chat e ai destinatari indicati nella richiesta. Gli indirizzi in A e CC sono visibili agli altri destinatari. Non autorizzi BCC, messaggi automatici, ricorrenti, massivi o allegati. Puoi revocare la delega.',
+  consent: 'Ho letto l’ambito della delega e autorizzo gli invii richiesti espressamente in chat a uno o più destinatari in A (To) e CC, fino a 30 indirizzi complessivi.',
+ },
 };
 const EMAIL_ERROR_LABELS = {
  provider_rejected: 'Il servizio email ha rifiutato il messaggio.',
@@ -117,6 +121,7 @@ function OnlineReviewContent({ session, kind, id }) {
    {isDelegation ? <article aria-label="Ambito dell’autorizzazione email">
     <p>{policy?.scope || 'Ambito dell’autorizzazione non riconosciuto. Non autorizzare questa proposta.'}</p>
     {delegation?.policy_version === 'chat-email-v2' && <p>Questa delega richiede una nuova autorizzazione personale. Una delega precedente per un solo destinatario non viene estesa automaticamente.</p>}
+    {delegation?.policy_version === 'chat-email-v3' && <p>Questa delega fino a 30 destinatari richiede una nuova autorizzazione personale. Le deleghe precedenti per uno o fino a 10 destinatari non vengono estese automaticamente.</p>}
     <p>Questa attivazione personale si esegue una sola volta. Dopo l’attivazione, gli invii coperti dalla delega non richiedono di aprire una task o confermare ogni email in questa pagina.</p>
     <p><strong>Stato:</strong> {delegationLabels[delegation?.status] || 'Stato da verificare'}</p>
     {delegationPending && !supportedPolicy && <p role="alert">Questa versione dell’autorizzazione non è riconosciuta. Non può essere attivata da questa pagina.</p>}

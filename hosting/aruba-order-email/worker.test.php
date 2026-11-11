@@ -78,7 +78,7 @@ foreach (['success', 'rejected', 'ambiguous', 'lost_ack'] as $scenario) {
     verify(count($GLOBALS['sent']) === 1, 'activity sent repeatedly');
     verify($GLOBALS['calls'][0]['activity_only'] === true, 'activity-only missing');
     verify($GLOBALS['calls'][0]['activity_email_protocol'] === 1, 'legacy-compatible protocol missing');
-    verify($GLOBALS['calls'][0]['activity_email_protocols'] === [1, 2], 'v2 support missing');
+    verify($GLOBALS['calls'][0]['activity_email_protocols'] === [1, 2, 3], 'v2 support missing');
     verify(end($GLOBALS['calls'])['action'] === $expected, 'wrong acknowledgement');
     verify(!str_contains($GLOBALS['sent'][0]['body'], 'Content-Disposition: attachment'), 'unexpected attachment');
     verify(!str_contains(json_encode($GLOBALS['calls']), 'Private body'), 'body leaked to diagnostics');
@@ -141,7 +141,7 @@ foreach ([
     verify(count($GLOBALS['sent']) === 0, 'malformed recipients handed to provider');
     verify(end($GLOBALS['calls'])['action'] === 'failed', 'malformed payload not terminal');
 }
-foreach ([1, 3] as $protocol) {
+foreach ([1, 4] as $protocol) {
     $GLOBALS['claim'] = $multiClaim;
     $GLOBALS['claim']['activity_email_protocol'] = $protocol;
     $GLOBALS['calls'] = $GLOBALS['sent'] = [];
@@ -153,7 +153,7 @@ foreach ([1, 3] as $protocol) {
 $legacy = buildMail($config, 'Legacy@example.test', 'Old single', 'Body', []);
 verify($legacy['to'] === 'Legacy@example.test', 'legacy address changed');
 verify(!str_contains($legacy['headers'], 'Cc:'), 'legacy has unexpected Cc');
-verify(str_contains($source, "'activity_email_protocol' => 1, 'activity_email_protocols' => [1, 2]"), 'update-first capability missing');
+verify(str_contains($source, "'activity_email_protocol' => 1, 'activity_email_protocols' => [1, 2, 3]"), 'update-first capability missing');
 echo "PASS: v2 To/Cc, legacy compatibility, invalid and duplicate recipients, no Bcc, lost-ack safety.\n";
 
 $GLOBALS['claim'] = ['status'=>'claimed', 'worker_id'=>'anomaly-worker', 'email'=>[
@@ -179,3 +179,46 @@ $GLOBALS['calls'] = $GLOBALS['sent'] = [];
 $result = processOne($config, false, false, true);
 verify($result['status'] === 'failed' && count($GLOBALS['sent']) === 0, 'anomaly attachment was not rejected');
 echo "PASS: isolated anomaly queue, text-only delivery, no attachments, definitive failure and uncertain-send deduplication.\n";
+
+// The increased limit belongs only to ordinary activity protocol 3.
+$GLOBALS['send_reject'] = $GLOBALS['send_throw'] = $GLOBALS['fail_ack'] = false;
+foreach ([[2, 10, 'accepted'], [2, 11, 'failed'], [3, 11, 'accepted'], [3, 30, 'accepted'], [3, 31, 'failed']] as [$protocol, $total, $expected]) {
+    $GLOBALS['claim'] = $multiClaim;
+    $GLOBALS['claim']['activity_email_protocol'] = $protocol;
+    $GLOBALS['claim']['email']['to_recipients'] = array_map(static fn(int $i): string => "to{$i}@example.test", range(1, 5));
+    $GLOBALS['claim']['email']['cc_recipients'] = array_map(static fn(int $i): string => "cc{$i}@example.test", range(1, $total - 5));
+    $GLOBALS['calls'] = $GLOBALS['sent'] = [];
+    $result = processOne($config, false, true);
+    verify($result['status'] === $expected, 'wrong protocol recipient limit');
+    verify(count($GLOBALS['sent']) === ($expected === 'accepted' ? 1 : 0), 'wrong handoff count');
+    if ($expected === 'accepted') {
+        verify(count(explode(', ', $GLOBALS['sent'][0]['to'])) === 5, 'To recipients missing');
+        verify(str_contains($GLOBALS['sent'][0]['headers'], 'cc' . ($total - 5) . '@example.test'), 'Cc recipients missing');
+    }
+    verify(end($GLOBALS['calls'])['activity_email_protocol'] === $protocol, 'wrong protocol acknowledgement');
+}
+try {
+    buildMail($config, array_map(static fn(int $i): string => "user{$i}@example.test", range(1, 11)), 'Legacy', 'Body', []);
+    throw new RuntimeException('default limit increased');
+} catch (Throwable $error) {
+    verify($error->getMessage() === 'Invalid email recipients.', 'non-activity limit changed');
+}
+echo "PASS: activity v3 limit 30 To+Cc, 31 rejected, legacy/report default limit unchanged.\n";
+
+// The expanded envelope keeps the same no-retry lifecycle.
+foreach (['rejected', 'ambiguous', 'lost_ack'] as $scenario) {
+    $GLOBALS['claim'] = $multiClaim;
+    $GLOBALS['claim']['activity_email_protocol'] = 3;
+    $GLOBALS['claim']['email']['to_recipients'] = array_map(static fn(int $i): string => "to{$i}@example.test", range(1, 29));
+    $GLOBALS['send_reject'] = $scenario === 'rejected';
+    $GLOBALS['send_throw'] = $scenario === 'ambiguous';
+    $GLOBALS['fail_ack'] = $scenario === 'lost_ack';
+    $GLOBALS['calls'] = $GLOBALS['sent'] = [];
+    $result = processOne($config, false, true);
+    $expected = $scenario === 'rejected' ? 'failed' : 'uncertain';
+    verify($result['status'] === $expected, 'wrong v3 outcome');
+    verify(count($GLOBALS['sent']) === 1, 'v3 handoff retried');
+    verify(end($GLOBALS['calls'])['action'] === $expected, 'wrong v3 acknowledgement');
+}
+$GLOBALS['send_reject'] = $GLOBALS['send_throw'] = $GLOBALS['fail_ack'] = false;
+echo "PASS: activity v3 definitive rejection, ambiguous handoff and lost acknowledgement never retry.\n";

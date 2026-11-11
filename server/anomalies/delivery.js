@@ -2,6 +2,7 @@ import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Buffer } from 'node:buffer';
 import process from 'node:process';
 import { resolveRecipients } from './recipients.js';
+import { allowsAnomalyDepartmentManager } from '../../shared/anomalyRecipientDepartments.js';
 
 const must = r => { if (r.error) throw r.error; return r.data; };
 const hash = value => createHash('sha256').update(value).digest('hex');
@@ -35,14 +36,18 @@ export async function authorizedRecipients(db, policy, departmentIds) {
   db.from('utenti_reparti').select('utente_id,reparto_id'),
  ]);
  const users = must(usersResult), memberships = must(membershipResult);
+ const departments = policy.departmentManager
+  ? must(await db.from('reparti').select('id,nome')) : [];
+ const excludedManagerIds = new Set(departments.filter(dept => !allowsAnomalyDepartmentManager(dept)).map(dept => dept.id));
  const byUser = new Map();
  const globalAdminPolicy={...policy,departmentManager:false,departmentOverrides:{},additionalUserIds:[]};
  const globalAdmins=resolveRecipients({departmentId:null,policy:globalAdminPolicy,users,memberships});
  if(policy.workspaceAdmins&&!globalAdmins.ready)throw Object.assign(Error('Destinatari amministrativi mancanti o ambigui.'),{code:'RECIPIENTS_NOT_READY',gaps:globalAdmins.gaps});
  for(const person of globalAdmins.recipients)byUser.set(person.userId,{...person,departmentIds:null});
  for (const departmentId of departmentIds) {
-  if(!policy.departmentManager&&!(policy.additionalUserIds||[]).length)continue;
-  const managerPolicy={...policy,workspaceAdmins:false,additionalUserIds:policy.additionalUserIds||[]};
+  const departmentManager = policy.departmentManager && !excludedManagerIds.has(departmentId);
+  if(!departmentManager&&!(policy.additionalUserIds||[]).length)continue;
+  const managerPolicy={...policy,departmentManager,workspaceAdmins:false,additionalUserIds:policy.additionalUserIds||[]};
   const resolved = resolveRecipients({ departmentId, policy:managerPolicy, users, memberships });
   if (!resolved.ready) throw Object.assign(Error('Destinatari mancanti o ambigui.'), { code:'RECIPIENTS_NOT_READY', gaps:resolved.gaps });
   for (const person of resolved.recipients) {

@@ -1,6 +1,25 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { anomalyEmail,buildEmailJobs,claimAnomalyEmail,anomalyEmailAction,anomalyWorkerReady,dispatchAnomalyEmails,enqueueAnomalyEmails,verifyAnomalyReadiness } from './delivery.js';
+import { anomalyEmail,buildEmailJobs,claimAnomalyEmail,anomalyEmailAction,anomalyWorkerReady,dispatchAnomalyEmails,enqueueAnomalyEmails,verifyAnomalyReadiness,authorizedRecipients } from './delivery.js';
+
+test('excluded commercial departments never resolve managers or saved overrides; production managers remain eligible', async () => {
+ const names = [' Beauty   Consultant ', 'CLIENTE PRIVATE', 'Field Force Estero', 'Field Force Farmacia', 'Field Force Professional', 'Produzione'];
+ const departments = names.map((nome, i) => ({ id: `d${i}`, nome }));
+ const users = names.map((_, i) => ({ id: `m${i}`, auth_user_id: `auth${i}`, attivo: true, email: `m${i}@example.test` }));
+ const memberships = departments.map((d, i) => ({ reparto_id: d.id, utente_id: `member${i}` }));
+ const members = names.map((_, i) => ({ id: `member${i}`, attivo: true, responsabile_utente_id: `m${i}` }));
+ const db = {
+  from(table) { const q = { select() { return q; }, eq() { return q; }, in() { return q; }, then(resolve) { return Promise.resolve({ data: table === 'utenti' ? [...users, ...members] : table === 'reparti' ? departments : memberships }).then(resolve); } }; return q; },
+  async rpc(name) { return { data: name === 'workspace_area_access_codes' ? ['anomalie'] : true }; },
+ };
+ const policy = { departmentManager: true, workspaceAdmins: false, additionalUserIds: [], departmentOverrides: {} };
+ const ids = departments.map(d => d.id);
+ assert.deepEqual((await authorizedRecipients(db, policy, ids)).map(p => p.userId), ['m5']);
+ policy.departmentOverrides = Object.fromEntries(departments.slice(0, 5).map(d => [d.id, 'm0']));
+ assert.deepEqual((await authorizedRecipients(db, policy, ids)).map(p => p.userId), ['m5']);
+ policy.departmentManager = false; policy.additionalUserIds = ['m1'];
+ assert.deepEqual((await authorizedRecipients(db, policy, ids)).map(p => p.userId), ['m1']);
+});
 
 test('daily text email makes incomplete coverage and no-auto-change policy explicit',()=>{
  const result=anomalyEmail({day:'2026-11-10',window:{from:'2026-11-10',toExclusive:'2026-12-08'},findings:[{severity:'high',title:'Carenza',description:'Materiale insufficiente',evidence:{article:'MP1',shortage:2,unit:'KG'}}],coverage:{movements:{complete:false,reason:'cutoff non verificato'}},runUrl:'https://workspace.progre.it/anomalie?run=1'});

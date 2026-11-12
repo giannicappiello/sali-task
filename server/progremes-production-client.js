@@ -278,6 +278,9 @@ export function createProgremesProductionClient({ env = process.env, fetchImpl =
     },
     recoverV4: async (workspaceExternalId, payload) => call(
       `/api/workspace/v4/production-requests/${workspaceExternalId}/confirmation-recovery`, payload, 60_000),
+    previewCancellationV4: async (workspaceExternalId, payload) => call(
+      `/api/workspace/v4/production-requests/${workspaceExternalId}/cancellation-preview`,
+      { ...payload, externalId: workspaceExternalId }, 60_000),
     cancelV4: async (workspaceExternalId, payload) => call(V4_CANCEL_PATH(workspaceExternalId),
       { ...payload, externalId: workspaceExternalId },
       Math.min(120_000, Math.max(10_000, Number(env.PROGREMES_CONFIRM_TIMEOUT_MS) || 60_000))),

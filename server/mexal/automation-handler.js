@@ -40,7 +40,7 @@ import { aiErrorMessage } from '../ai/errors.js';
 import { handlePlanningWorkspace } from "../../server/planning-workspace.js";
 import { handleAIOrderDocument } from "../../server/ai/order-document.js";
 import { handleWorkspaceDocumentCompose } from "../../server/company-document-composer.js";
-import { cancelProductionRequest, confirmProductionProposal, handleProductionEvent, previewProductionRequest } from "../../server/progremes-production-api.js";
+import { previewProductionCancellation, cancelProductionRequest, confirmProductionProposal, handleProductionEvent, previewProductionRequest } from "../../server/progremes-production-api.js";
 import { createOctOrdersRunHandler, precheckOctOrders } from "../../server/mexal/sync-oct-orders.js";
 import { handleDigitalConnectionManager } from "../../server/crm/digital-connection-manager.js";
 import { listProductionWorkbench, loadAllProductionOrders, productionWorkbenchDetail } from "../../server/workspacemes-workbench.js";
@@ -944,9 +944,14 @@ export default async function handler(req, res) {
         const admin = await createAdmin(req, "rdp.decide");
         return confirmProductionProposal(req, res, { admin: admin.supabase });
       }
+      case "progremes_production_cancel_preview": {
+        const admin = await createAdmin(req, "rdp.cancel");
+        req.body = { requestId: body.requestId };
+        return previewProductionCancellation(req, res, { admin: admin.supabase, requestedBy: admin.authUserId });
+      }
       case "progremes_production_cancel": {
         const admin = await createAdmin(req, "rdp.cancel");
-        req.body = { requestId: body.requestId, reason: body.reason };
+        req.body = { requestId: body.requestId, reason: body.reason, previews: body.previews };
         return cancelProductionRequest(req, res, { admin: admin.supabase, requestedBy: admin.authUserId });
       }
       case "warehouse_article_sync": {

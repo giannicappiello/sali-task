@@ -5,7 +5,7 @@ import { createClient } from "@supabase/supabase-js";
 import { verifyProductionMessage } from "./progremes-production-hmac.js";
 import { aggregateWorkspaceHashes, createProductionPayload, createProgremesProductionClient } from "./progremes-production-client.js";
 import { prepareProductionDemand, productionDemandContract } from "./production-netting.js";
-import { cancelCoordinatedProductionRequest } from "./workspacemes-cancel-coordinator.js";
+import { cancelCoordinatedProductionRequest, previewCoordinatedProductionCancellation } from "./workspacemes-cancel-coordinator.js";
 
 const EVENT_PATH = "/api/progremes-production/events";
 function required(name) { const value = String(process.env[name] || "").trim(); if (!value) throw new Error(`Configurazione server mancante: ${name}`); return value; }
@@ -83,6 +83,18 @@ async function loadPersistedProductionRequest(admin, requestId) {
   };
 }
 
+export async function previewProductionCancellation(req, res, { admin = adminClient(), requestedBy = null, client } = {}) {
+  if (req.method !== "POST") return res.status(405).json({ error: "Metodo non consentito." });
+  const requestId = String(req.body?.requestId || "").trim();
+  if (!requestId) return res.status(400).json({ error: "RdP obbligatoria.", code: "INVALID_REQUEST" });
+  try {
+    return res.status(200).json(await previewCoordinatedProductionCancellation({ admin, requestId, requestedBy, client }));
+  } catch (error) {
+    return res.status(Number(error.status) >= 400 && Number(error.status) <= 599 ? Number(error.status) : 409)
+      .json({ error: error.message || "Verifica annullamento non riuscita.", code: error.code || "CANCELLATION_PREVIEW_FAILED" });
+  }
+}
+
 export async function cancelProductionRequest(req, res, { admin = adminClient(), requestedBy = null, client } = {}) {
   if (req.method !== "POST") return res.status(405).json({ error: "Metodo non consentito." });
   const requestId = String(req.body?.requestId || "").trim();
@@ -91,9 +103,10 @@ export async function cancelProductionRequest(req, res, { admin = adminClient(),
   if (reason.length < 5 || reason.length > 1000)
     return res.status(400).json({ error: "Il motivo è obbligatorio e deve contenere da 5 a 1000 caratteri.", code: "INVALID_CANCELLATION_REASON" });
   try {
-    const cancelled = await cancelCoordinatedProductionRequest({ admin, requestId, reason, requestedBy, client });
+    const cancelled = await cancelCoordinatedProductionRequest({ admin, requestId, reason, requestedBy, client, previews: req.body?.previews });
     return res.status(200).json({ cancelled: true, id: requestId, externalId: cancelled.external_id,
-      status: "Cancelled", cancelledAt: cancelled.cancelled_at, warnings: cancelled.warnings || [] });
+      status: "Cancelled", cancelledAt: cancelled.cancelled_at, warnings: cancelled.warnings || [],
+      cancelledOrders: cancelled.cancelledOrders || [], preservedOrders: cancelled.preservedOrders || [] });
   } catch (error) {
     const message = String(error.message || "");
     const code = message.includes("IRREVERSIBLE_EFFECTS") ? "IRREVERSIBLE_EFFECTS"

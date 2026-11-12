@@ -323,6 +323,12 @@ function processOne(array $config, bool $reportsOnly = false, bool $activityOnly
     $report = str_starts_with((string)$email['id'], 'report:');
     $definitive = false;
     try {
+        // The report backend freezes a comma-separated list of bare mailboxes.
+        // Validate each mailbox independently; ordinary queues keep their own
+        // protocol-specific recipient handling and limits.
+        $reportRecipients = $report
+            ? mailRecipients(explode(',', (string)$email['destinatario']))['to']
+            : null;
         if ($report) {
             // Fetch each private PDF independently. The aggregate may exceed the
             // Vercel response limit; never turn it into a public download link.
@@ -347,7 +353,7 @@ function processOne(array $config, bool $reportsOnly = false, bool $activityOnly
         }
         $mail = buildMail(
             $config,
-            (string)$email['destinatario'],
+            $reportRecipients ?? (string)$email['destinatario'],
             (string)$email['oggetto'],
             (string)$email['corpo'],
             is_array($claimed['attachments'] ?? null) ? $claimed['attachments'] : []
@@ -397,7 +403,7 @@ try {
     }
 
     if ($action === 'report_capabilities') {
-        respond(['report_protocol' => 1,
+        respond(['report_protocol' => 1, 'report_recipient_lists' => true,
             'queue_enabled' => ($config['queue_enabled'] ?? false) === true,
             'from_email' => safeHeader((string)$config['from_email'])]);
     }

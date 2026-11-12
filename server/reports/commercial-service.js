@@ -28,7 +28,7 @@ export async function workerReady(fetchImpl=fetch) {
   // Old versions return 405 for GET without ever consuming real order emails.
   const r=await fetchImpl(probe.toString(),{method:'GET',headers:{'X-Progre-Worker-Secret':secret},signal:AbortSignal.timeout(15000)});
   const result=await r.json();
-  requireThat(r.ok&&result.report_protocol===1&&result.queue_enabled===true,'Aggiornare il worker email Workspace al protocollo report prima di attivare.',503);
+  requireThat(r.ok&&result.report_protocol===1&&result.report_recipient_lists===true&&result.queue_enabled===true,'Aggiornare il worker email Aruba: è richiesto il supporto agli elenchi destinatari dei report.',503);
   return {ready:true,from:result.from_email};
 }
 export async function dispatchCommercialReports(fetchImpl=fetch) {

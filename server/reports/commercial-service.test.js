@@ -139,7 +139,7 @@ test('worker per-message uncertainty is not reported as completed dispatch',asyn
  const env=globalThis.process.env,oldUrl=env.ARUBA_EMAIL_WORKER_URL,oldSecret=env.ARUBA_EMAIL_WORKER_SECRET;
  env.ARUBA_EMAIL_WORKER_URL='https://example.test/worker';env.ARUBA_EMAIL_WORKER_SECRET='fixture';
  try {
-  await assert.rejects(()=>dispatchCommercialReports(async(_url,options)=>Response.json(options.method==='GET'?{report_protocol:1,queue_enabled:true}:{status:'ok',results:[{status:'uncertain'}]})),/Non ripetere invii incerti/);
+  await assert.rejects(()=>dispatchCommercialReports(async(_url,options)=>Response.json(options.method==='GET'?{report_protocol:1,report_recipient_lists:true,queue_enabled:true}:{status:'ok',results:[{status:'uncertain'}]})),/Non ripetere invii incerti/);
  } finally {
   if(oldUrl===undefined)delete env.ARUBA_EMAIL_WORKER_URL;else env.ARUBA_EMAIL_WORKER_URL=oldUrl;
   if(oldSecret===undefined)delete env.ARUBA_EMAIL_WORKER_SECRET;else env.ARUBA_EMAIL_WORKER_SECRET=oldSecret;

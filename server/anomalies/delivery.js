@@ -7,24 +7,42 @@ import { allowsAnomalyDepartmentManager } from '../../shared/anomalyRecipientDep
 const must = r => { if (r.error) throw r.error; return r.data; };
 const hash = value => createHash('sha256').update(value).digest('hex');
 
+// Keep well below the database's 20,000-character contract, including the
+// recipient scope suffix. Details remain intact in the authorized registry.
+export const ANOMALY_EMAIL_MAX_CHARS = 20000;
+const excerpt = (value, limit = 240) => {
+ const chars = Array.from(String(value ?? '').replace(/\s+/g, ' ').trim());
+ return chars.length > limit ? chars.slice(0, limit - 1).join('') + '…' : chars.join('');
+};
+const severityRank = value => ({critical: 0, high: 1, warning: 2, info: 3}[value] ?? 4);
+const findingKey = x => String(x.fingerprint || `${x.title}|${x.description}|${x.evidence?.jobId ?? ''}|${x.evidence?.article ?? ''}`);
+const compareFindings = (a, b) => severityRank(a.severity) - severityRank(b.severity) || findingKey(a).localeCompare(findingKey(b));
+const findingLine = (x, i) => {
+ const detail = x.description && x.description !== x.title ? ` — ${excerpt(x.description)}` : '';
+ const evidence = [x.evidence?.jobId != null ? `lavorazione ${excerpt(x.evidence.jobId, 40)}` : '', x.evidence?.article ? `articolo ${excerpt(x.evidence.article, 80)}` : '', x.evidence?.shortage != null ? `carenza ${excerpt(x.evidence.shortage, 40)} ${excerpt(x.evidence.unit, 20)}` : ''].filter(Boolean).join(', ');
+ return `${i + 1}. [${excerpt(x.severity, 20).toUpperCase()}] ${excerpt(x.title)}${detail}${evidence ? ` (${evidence})` : ''}`;
+};
+
 export function anomalyEmail({ day, window, findings, coverage, runUrl }) {
- const critical = findings.filter(x => ['critical','high'].includes(x.severity));
- const other = findings.filter(x => !['critical','high'].includes(x.severity));
- const gaps = Object.entries(coverage || {}).filter(([,v]) => v.complete !== true);
+ const ordered = [...findings].sort(compareFindings);
+ const critical = ordered.filter(x => ['critical','high'].includes(x.severity));
+ const other = ordered.filter(x => !['critical','high'].includes(x.severity));
+ const gaps = Object.entries(coverage || {}).filter(([,v]) => v?.complete !== true).sort(([a],[b]) => a.localeCompare(b));
+ const selectedCritical = critical.slice(0, 10), selectedOther = other.slice(0, 5), selectedGaps = gaps.slice(0, 12);
  const lines = [
   `Controllo Fabbisogni & Planning — ${day}`,
   `Orizzonte: ${window.from} → ${window.toExclusive} (termine escluso), Europe/Rome.`,
   `Esito: ${gaps.length ? 'INCOMPLETO — le fonti mancanti non equivalgono a esito regolare' : 'copertura completa'}.`,
-  `Criticità alte/critiche: ${critical.length}; altre segnalazioni: ${other.length}.`,
-  '',
-  'CRITICITÀ',
-  ...(critical.length ? critical.map((x,i) => `${i+1}. [${x.severity.toUpperCase()}] ${x.title} — ${x.description}${x.evidence?.article ? ` (articolo ${x.evidence.article}${x.evidence.shortage != null ? `, carenza ${x.evidence.shortage} ${x.evidence.unit || ''}` : ''})` : ''}`) : ['Nessuna criticità alta/critica rilevata nelle fonti complete.']),
-  '', 'ALTRE SEGNALAZIONI',
-  ...(other.length ? other.map((x,i) => `${i+1}. [${x.severity}] ${x.title} — ${x.description}`) : ['Nessuna.']),
-  '', 'COPERTURA E LIMITI',
-  ...(gaps.length ? gaps.map(([name,value]) => `• ${name}: ${value.reason || 'copertura non verificata'}`) : ['Fonti richieste complete secondo il contratto di controllo.']),
+  `Segnalazioni totali: ${findings.length}. Criticità alte/critiche: ${critical.length}; altre segnalazioni: ${other.length}.`,
+  'Sintesi email: estratti delle principali segnalazioni, priorità alle criticità. Testi e prove integrali restano nel registro Workspace.',
+  '', `CRITICITÀ PRINCIPALI (${selectedCritical.length} di ${critical.length})`,
+  ...(critical.length ? selectedCritical.map(findingLine) : ['Nessuna criticità alta/critica rilevata nelle fonti complete.']),
+  '', `ALTRE SEGNALAZIONI (${selectedOther.length} di ${other.length})`,
+  ...(other.length ? selectedOther.map(findingLine) : ['Nessuna.']),
+  '', `COPERTURA E LIMITI (${selectedGaps.length} di ${gaps.length} lacune)`,
+  ...(gaps.length ? selectedGaps.map(([name,value]) => `• ${excerpt(name, 80)}: ${excerpt(value?.reason || 'copertura non verificata', 300)}`) : ['Fonti richieste complete secondo il contratto di controllo.']),
   'Le differenze fisiche non confrontabili o con cutoff di sincronizzazione non attestato sono riportate come da verificare, non come errori contabili.',
-  '', `Registro e schede Workspace: ${runUrl}`,
+  '', `Elenco completo nel registro anomalie e relative prove (visibilità secondo permessi Workspace): ${runUrl}`,
   'Il report è deterministico e in sola lettura. Nessun ordine, prenotazione, lotto o cambio planning viene eseguito automaticamente.',
  ].join('\n');
  return { subject: `Progre — Fabbisogni & Planning ${day}${gaps.length ? ' · copertura incompleta' : ''}`, body: lines };
@@ -82,6 +100,7 @@ export function buildEmailJobs({ recipients, day, window, findings, coverage, ru
   const scopedFindings=Array.isArray(recipient.departmentIds)?findings.filter(x=>x.department_id&&recipient.departmentIds.includes(x.department_id)):findings;
   const content = anomalyEmail({day,window,findings:scopedFindings,coverage,runUrl});
   const body = `${content.body}\n\nAmbito destinatario: ${Array.isArray(recipient.departmentIds) ? 'reparti assegnati' : 'amministrazione Workspace'}.`;
+  if (Array.from(body).length > ANOMALY_EMAIL_MAX_CHARS) throw Object.assign(Error('Sintesi email oltre il limite consentito.'), {code:'ANOMALY_EMAIL_BODY_TOO_LONG', bodyChars:Array.from(body).length, maxChars:ANOMALY_EMAIL_MAX_CHARS});
   return { recipient_id:recipient.userId, recipient_email:recipient.email, scope_department_ids:recipient.departmentIds, channel:'email', subject:content.subject, body, content_hash:hash(JSON.stringify({day,body,recipient:recipient.userId})) };
  });
 }
@@ -91,8 +110,13 @@ export async function enqueueAnomalyEmails(db, { actorId, run, window, findings,
  const departments = [...new Set(departmentIds||findings.map(x => x.department_id).filter(Boolean))];
  if(findings.some(x=>!x.department_id)&&!policy.workspaceAdmins)throw Object.assign(Error('Le segnalazioni senza reparto identificato richiedono destinatari amministrativi globali.'),{code:'FINDING_SCOPE_UNRESOLVED'});
  const recipients = await authorizedRecipients(db,policy,departments);
- const jobs = buildEmailJobs({recipients,day:window.from,window,findings,coverage,runUrl:`https://workspace.progre.it/anomalie?run=${encodeURIComponent(run.id)}`});
- if (!jobs.length) return { queued:0, reason:'no_authorized_recipients' };
+ // Never requeue a recipient after a prior attempt, including uncertain/failed.
+ // Content hashes alone are insufficient when the summary format changes.
+ const previous = must(await db.from('anomaly_deliveries').select('recipient_id,status').eq('run_id',run.id).eq('channel','email'));
+ const attempted = new Set(previous.map(row => row.recipient_id));
+ const remaining = recipients.filter(person => !attempted.has(person.userId));
+ const jobs = buildEmailJobs({recipients:remaining,day:window.from,window,findings,coverage,runUrl:`https://workspace.progre.it/anomalie?run=${encodeURIComponent(run.id)}`});
+ if (!jobs.length) return { queued:0, reason:'no_new_recipients' };
  return { queued:must(await db.rpc('anomaly_queue_email',{p_actor:actorId,p_run:run.id,p_jobs:jobs})) };
 }
 

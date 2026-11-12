@@ -48,3 +48,23 @@ test('analysis for another business day is rejected before persistence', async (
  await assert.rejects(runDaily(database,{now,loadSnapshot:async()=>({kind:'analyzed-control-source',window:{from:'2026-11-09',toExclusive:'2026-12-07'},findings:[],gaps:[]})}),/Invalid daily analysis contract/);
  assert.equal(database.calls.filter(x=>x.name).length,0);
 });
+
+test('manual recovery cannot bypass cron authentication',async()=>{
+ let accessed=false,code;
+ const response={setHeader(){},status(x){code=x;return this;},json(x){return x;}};
+ await handleAnomalyCron({method:'POST',headers:{authorization:'Bearer wrong'},body:{action:'recover_delivery',run_id:'11111111-1111-4111-8111-111111111111'}},response,{env:{CRON_SECRET:'secret'},admin(){accessed=true;}});
+ assert.equal(code,401);assert.equal(accessed,false);
+});
+
+test('recovery outside cron minute is limited to enabled, completed current-day run and isolated queue',async()=>{
+ const {recoverAnomalyRun}=await import('./worker.js');
+ const runId='11111111-1111-4111-8111-111111111111';
+ const agent={enabled:true,readiness:{ready:true,emailReady:true}};
+ const run={id:runId,agent_code:'fabbisogni',business_day:'2026-11-12',status:'incomplete',coverage:{}};
+ const database=(a,r,deliveries=[])=>({from(table){const q={select(){return q;},eq(){return q;},in(){return q;},single:async()=>({data:a}),maybeSingle:async()=>({data:r}),then(resolve){return Promise.resolve({data:table==='anomaly_deliveries'?deliveries:[]}).then(resolve);}};return q;},rpc(){assert.fail('No persistence permitted for a blocked recovery');}});
+ const opts={runId,now:new Date('2026-11-12T10:30:00Z')};
+ assert.equal((await recoverAnomalyRun(database({...agent,enabled:false},run),opts)).reason,'EMAIL_DELIVERY_NOT_READY');
+ for(const r of [null,{...run,business_day:'2026-11-11'},{...run,agent_code:'other'},{...run,status:'running'}])assert.equal((await recoverAnomalyRun(database(agent,r),opts)).reason,'TODAYS_PERSISTED_RUN_REQUIRED');
+ assert.equal((await recoverAnomalyRun(database(agent,run,[{run_id:'other',status:'pending'}]),opts)).reason,'OTHER_RUN_PENDING');
+ for(const status of ['uncertain','failed'])assert.equal((await recoverAnomalyRun(database(agent,run,[{run_id:runId,status}]),opts)).reason,'DELIVERY_REQUIRES_REVIEW');
+});

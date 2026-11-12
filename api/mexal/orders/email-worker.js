@@ -76,6 +76,12 @@ return async function handler(req, res) {
     }
 
     if (action === "claim") {
+      // An anomaly-only worker must never claim commercial, margin or other mail.
+      if(req.body?.anomaly_only===true){
+        if(!authorizedAnomalyWorkerRequest(req))return res.status(401).json({error:'Worker non autorizzato.'});
+        const anomaly=await claimAnomalyEmail(supabase,anomalyWorkerId());
+        return res.status(200).json(anomaly||{status:'idle'});
+      }
       const id = workerId(req);
       // Preserve the legacy flag for update-first rollouts. Select only a
       // protocol explicitly advertised by the consumer, never infer v3 from v2.
@@ -90,10 +96,6 @@ return async function handler(req, res) {
         if(report)return res.status(200).json(report);
         const margin=await claimMarginEmail(supabase,id);
         if(margin)return res.status(200).json(margin);
-      }
-      if(req.body?.anomaly_only===true){
-        const anomaly=await claimAnomalyEmail(supabase,anomalyWorkerId());
-        return res.status(200).json(anomaly||{status:'idle'});
       }
       if(req.body?.reports_only===true)return res.status(200).json({status:'idle'});
       if([1, 2, 3].includes(activityProtocol)) {

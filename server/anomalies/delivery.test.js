@@ -69,3 +69,30 @@ test('readiness verifies the configured scheduled owner and persisted recipient 
  assert.equal(verifiedOwner,'scheduled-owner');assert.equal(result.readiness.ready,true);assert.equal(result.readiness.recipients.ready,true);assert.equal(result.enabled,false);
  await assert.rejects(verifyAnomalyReadiness(db,{ownerId:'actor',env:{}}),{code:'SCHEDULED_OWNER_NOT_CONFIGURED'});
 });
+
+test('large daily reports remain bounded, counted and linked without mutating findings',()=>{
+ const findings=Array.from({length:132},(_,i)=>({fingerprint:String(i).padStart(3,'0'),severity:i<75?'high':'warning',title:`Problema ${i} ${'X'.repeat(400)}`,description:'Dettagli '.repeat(200),evidence:{jobId:i,article:'MP1',shortage:2,unit:'KG'}}));
+ const original=structuredClone(findings);
+ const input={recipients:[{userId:'a',email:'a@example.test',departmentIds:null}],day:'2026-11-12',window:{from:'2026-11-12',toExclusive:'2026-12-10'},findings,coverage:{bom:{complete:false,reason:'Distinta non verificata'}},runUrl:'https://workspace.progre.it/anomalie?run=1'};
+ const [job]=buildEmailJobs(input);
+ assert(Array.from(job.body).length<20000);assert.match(job.body,/Segnalazioni totali: 132/);assert.match(job.body,/alte\/critiche: 75/);assert.match(job.body,/10 di 75/);assert.match(job.body,/5 di 57/);assert.match(job.body,/Distinta non verificata/);assert.match(job.body,/Elenco completo/);assert.match(job.body,/anomalie\?run=1/);
+ assert.deepEqual(findings,original);
+ assert.deepEqual(buildEmailJobs({...input,findings:[...findings].reverse()}),[job]);
+});
+
+test('critical priority, bounded Unicode excerpts and coverage limits survive huge data',()=>{
+ const input={recipients:[{userId:'a',email:'a@example.test',departmentIds:null}],day:'2026-11-12',window:{from:'2026-11-12',toExclusive:'2026-12-10'},findings:[...Array.from({length:10000},(_,i)=>({fingerprint:`f${i}`,severity:'high',title:'😀'.repeat(1000),description:'D'.repeat(5000)})),{severity:'critical',title:'Priorità assoluta'}],coverage:Object.fromEntries(Array.from({length:100},(_,i)=>[`source${i}`,{complete:false,reason:'Lacuna'.repeat(1000)}])),runUrl:'https://workspace.progre.it/anomalie?run=1'};
+ const [job]=buildEmailJobs(input);
+ assert(Array.from(job.body).length<20000);assert.match(job.body,/1\. \[CRITICAL\] Priorità assoluta/);assert.match(job.body,/12 di 100 lacune/);assert.doesNotMatch(job.body,/\uFFFD/);
+ assert.throws(()=>buildEmailJobs({...input,runUrl:'x'.repeat(20001)}),{code:'ANOMALY_EMAIL_BODY_TOO_LONG'});
+});
+
+test('any existing delivery prevents requeue after template changes, including ambiguous attempts',async()=>{
+ const admin={id:'11111111-1111-4111-8111-111111111111',auth_user_id:'auth-admin',attivo:true,email:'admin@example.test',ruoli:{amministratore_workspace:true}};
+ for(const status of ['pending','accepted','delivered','uncertain','failed']){
+  let queued=false;
+  const db={from(table){const q={select(){return q;},eq(){return q;},in(){return q;},then(resolve){return Promise.resolve({data:table==='utenti'?[admin]:table==='anomaly_deliveries'?[{recipient_id:admin.id,status}]:[]}).then(resolve);}};return q;},async rpc(name){if(name==='anomaly_queue_email')queued=true;return {data:name==='workspace_area_access_codes'?['anomalie']:true};}};
+  const result=await enqueueAnomalyEmails(db,{actorId:admin.id,run:{id:'run'},window:{from:'2026-11-12',toExclusive:'2026-12-10'},findings:[],coverage:{},departmentIds:[],policy:{workspaceAdmins:true,departmentManager:false}});
+  assert.equal(result.queued,0);assert.equal(queued,false,status);
+ }
+});

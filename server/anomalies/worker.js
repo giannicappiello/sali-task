@@ -21,7 +21,7 @@ async function deliverPersistedRun(db,{agent,run,window,findings,coverage,depart
   const counts=rows.reduce((out,row)=>({...out,[row.status]:(out[row.status]||0)+1}),{});
   const status=(counts.uncertain||counts.failed)?'requires_review':(counts.pending?'pending':(counts.accepted||counts.delivered?'accepted':(rows.length?'complete':'no_recipients')));
   return {status,queued:queued.queued,dispatch,deliveries:counts};
- }catch(error){log('error','Anomaly report email was not queued',{code:error.code||'delivery_error'});return {status:'blocked',reason:error.code||'delivery_not_ready'};}
+ }catch(error){log('error','Anomaly report email was not queued',{code:error.code||'delivery_error',message:String(error.message||'').slice(0,300),runId:run.id,bodyChars:error.bodyChars,maxChars:error.maxChars});return {status:'blocked',reason:error.code||'delivery_not_ready'};}
 }
 
 export async function runDaily(db, { now = new Date(), loadSnapshot, ownerId = process.env.FABBISOGNI_OWNER_PROFILE_ID } = {}) {
@@ -51,14 +51,34 @@ export async function runDaily(db, { now = new Date(), loadSnapshot, ownerId = p
  return { status: result.status, run: persisted, delivery:delivery.status==='not_configured'?'not_sent':delivery, findingCount:result.findings.length, gapCount:result.gaps.length };
 }
 
+// Explicit recovery of today's persisted run, not a second analysis or a clock override.
+export async function recoverAnomalyRun(db, {runId, now = new Date(), ownerId = process.env.FABBISOGNI_OWNER_PROFILE_ID} = {}) {
+ if (!/^[a-f0-9-]{36}$/i.test(String(runId || ''))) return {status:'blocked',reason:'INVALID_RUN_ID'};
+ const window = businessWindow(now);
+ const agent = must(await db.from('anomaly_agents').select('*').eq('code','fabbisogni').single());
+ if (!agent.enabled || agent.readiness?.ready !== true || agent.readiness?.emailReady !== true) return {status:'blocked',reason:'EMAIL_DELIVERY_NOT_READY'};
+ const run = must(await db.from('anomaly_runs').select('id,agent_code,business_day,status,coverage').eq('id',runId).maybeSingle());
+ if (!run || run.agent_code !== 'fabbisogni' || run.business_day !== window.from || !['complete','incomplete'].includes(run.status)) return {status:'blocked',reason:'TODAYS_PERSISTED_RUN_REQUIRED'};
+ // The Aruba anomaly worker drains a global anomaly queue. Stop rather than
+ // sending another day's mail or silently retrying an ambiguous transport.
+ const deliveries = must(await db.from('anomaly_deliveries').select('run_id,status').eq('channel','email').in('status',['pending','uncertain','failed']));
+ if (deliveries.some(row => row.run_id !== run.id && row.status === 'pending')) return {status:'blocked',reason:'OTHER_RUN_PENDING'};
+ if (deliveries.some(row => row.run_id === run.id && ['uncertain','failed'].includes(row.status))) return {status:'blocked',reason:'DELIVERY_REQUIRES_REVIEW'};
+ const findings = must(await db.from('anomalies').select('*').eq('last_run_id',run.id));
+ const stored = run.coverage || {};
+ return {status:'recovery',runId:run.id,delivery:await deliverPersistedRun(db,{agent,run,window,findings,coverage:stored.sources||{},departmentIds:stored.departmentIds||[],ownerId})};
+}
+
 export async function handleAnomalyCron(req, res, { env = globalThis.process.env, admin = createProgremesReadonlyAdmin, ...dependencies } = {}) {
  res.setHeader('Cache-Control', 'no-store');
  const expected = String(env.CRON_SECRET || ''), actual = String(req.headers?.authorization || '').replace(/^Bearer /, '');
- if (req.method !== 'GET') return res.status(405).json({ error: 'Metodo non consentito.' });
+ const recovery = req.method === 'POST' && req.body?.action === 'recover_delivery';
+ if (req.method !== 'GET' && !recovery) return res.status(405).json({ error: 'Metodo non consentito.' });
  if (!expected || expected.length !== actual.length || !timingSafeEqual(Buffer.from(expected), Buffer.from(actual))) return res.status(401).json({ error: 'Cron non autorizzato.' });
  try {
   const db = admin();
   const now = dependencies.now || new Date();
+  if (recovery) return res.json(await recoverAnomalyRun(db,{runId:req.body.run_id,now,ownerId:env.FABBISOGNI_OWNER_PROFILE_ID}));
   const loadSnapshot = dependencies.loadSnapshot || (() => loadDailySnapshot({ db, now, ownerId: env.FABBISOGNI_OWNER_PROFILE_ID }));
   return res.json(await runDaily(db, { ...dependencies, now, ownerId: env.FABBISOGNI_OWNER_PROFILE_ID, loadSnapshot }));
  }

@@ -3,6 +3,16 @@ import { createHash } from 'node:crypto';
 import { POLICY_HASH,must,requireThat,buildDeliveries,recipientsFingerprint } from './commercial-policy.js';
 import { loadReportRecipients,reportSettings,assertOwner } from './commercial-service.js';
 
+export function commercialEmailParts(files,keys) {
+  const groups=[];let current=[],bytes=0;
+  for(const key of keys){const file=files.find(f=>f.artifact_key===key);requireThat(file&&file.bytes>0&&file.bytes<=2000000,'PDF non valido per la suddivisione.');
+    if(current.length&&bytes+file.bytes>3000000){groups.push(current);current=[];bytes=0;}current.push(key);bytes+=file.bytes;
+  }
+  if(current.length)groups.push(current);
+  const plan_hash=createHash('sha256').update(JSON.stringify(groups.map(group=>group.map(key=>{const f=files.find(f=>f.artifact_key===key);return {key,sha256:f.sha256,bytes:f.bytes};})))).digest('hex');
+  return {plan_hash,parts:groups.map((artifact_keys,part)=>({part,total:groups.length,artifact_keys}))};
+}
+
 // Only upgraded workers opt into this protocol. Existing order workers see no report jobs.
 export async function claimCommercialEmail(db,workerId) {
   const result=must(await db.rpc('commercial_report_claim_email',{p_worker:workerId}));
@@ -18,7 +28,7 @@ export async function claimCommercialEmail(db,workerId) {
     requireThat(expected&&expected.recipient===job.recipient&&expected.subject===job.subject&&JSON.stringify(expected.artifact_keys)===JSON.stringify(job.artifact_keys),'Destinatari o allegati variati dopo la generazione. Richiede revisione.');
     const files=must(await db.from('commercial_report_files').select('artifact_key,filename,bytes,sha256,verified').eq('batch_id',job.batch_id).in('artifact_key',job.artifact_keys));
     requireThat(files.length===job.artifact_keys.length&&files.every(f=>f.verified),'Allegati report incompleti.');
-    return {status:'claimed',worker_id:workerId,email:{id:'report:'+job.id,lock_token:job.lock_token,destinatario:job.recipient,oggetto:job.subject,corpo:job.body},attachments:files.map(f=>({filename:f.filename,content_type:'application/pdf',report_artifact_key:f.artifact_key,sha256:f.sha256,bytes:f.bytes}))};
+    return {status:'claimed',worker_id:workerId,email:{id:'report:'+job.id,lock_token:job.lock_token,destinatario:job.recipient,oggetto:job.subject,corpo:job.body},report_parts:commercialEmailParts(files,job.artifact_keys),attachments:files.map(f=>({filename:f.filename,content_type:'application/pdf',report_artifact_key:f.artifact_key,sha256:f.sha256,bytes:f.bytes}))};
   } catch(error) {
     await db.from('commercial_report_emails').update({status:'failed'}).eq('id',job.id).eq('lock_token',job.lock_token);
     throw error;
@@ -33,6 +43,14 @@ export async function commercialWorkerAction(db,body) {
   const batch=must(await db.from('commercial_report_batches').select('*').eq('id',job.batch_id).maybeSingle());
   requireThat(settings?.enabled&&settings.policy_hash===POLICY_HASH&&batch?.owner_id===settings.owner_id,'Piano report sospeso o modificato.',403);
   await assertOwner(db,settings.owner_id);
+  if(['part_claim','part_complete','part_failed'].includes(body.action)) {
+    const files=must(await db.from('commercial_report_files').select('artifact_key,bytes,sha256').eq('batch_id',job.batch_id).in('artifact_key',job.artifact_keys));
+    const plan=commercialEmailParts(files,job.artifact_keys),part=plan.parts.find(p=>p.part===body.part);
+    requireThat(part&&body.plan_hash===plan.plan_hash,'Parte fuori dal piano verificato.',409);
+    if(body.action==='part_claim')return {status:must(await db.rpc('commercial_report_claim_part',{p_email:id,p_worker:body.worker_id,p_lock:body.lock_token,p_part:part.part,p_total:part.total,p_hash:plan.plan_hash,p_keys:part.artifact_keys}))};
+    const completed=must(await db.rpc('commercial_report_finish_part',{p_email:id,p_worker:body.worker_id,p_lock:body.lock_token,p_part:part.part,p_hash:plan.plan_hash,p_status:body.action==='part_complete'?'sent':'failed',p_receipt:body.action==='part_complete'?String(body.message_id||'').slice(0,200):null,p_error:body.action==='part_failed'?String(body.error||'Rifiuto definitivo del trasporto.').slice(0,1000):null}));
+    return {status:completed?'completed':'part_recorded'};
+  }
   if(body.action==='attachment') {
     requireThat(job.status==='uncertain'&&job.artifact_keys.includes(body.report_artifact_key),'Allegato fuori dal messaggio autorizzato.',403);
     const f=must(await db.from('commercial_report_files').select('base64,sha256,filename').eq('batch_id',job.batch_id).eq('artifact_key',body.report_artifact_key).single());
@@ -41,6 +59,8 @@ export async function commercialWorkerAction(db,body) {
   }
   if(body.action==='complete') {
     if(job.status==='sent')return {status:'already_completed'};
+    const parts=must(await db.from('commercial_report_email_parts').select('status,total').eq('email_id',id));
+    requireThat(!parts.length||(parts.length===parts[0].total&&parts.every(p=>p.status==='sent')),'Parti email non tutte confermate.',409);
     requireThat(job.status==='uncertain','Esito invio report inatteso.',409);
     must(await db.from('commercial_report_emails').update({status:'sent',provider_message_id:String(body.message_id||'').slice(0,200),sent_at:new Date().toISOString()}).eq('id',id).eq('status','uncertain').eq('lock_token',job.lock_token));
     const remaining=must(await db.from('commercial_report_emails').select('id').eq('batch_id',job.batch_id).neq('status','sent').limit(1));

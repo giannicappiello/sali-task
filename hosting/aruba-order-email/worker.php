@@ -291,6 +291,57 @@ function processAnomalyClaim(array $config, array $claimed): array
     }
 }
 
+function sendReportParts(array $config, array $claimed, array $to): array
+{
+    $email = $claimed['email'];
+    $plan = $claimed['report_parts'] ?? null;
+    if (!is_array($plan) || !preg_match('/^[a-f0-9]{64}$/', (string)($plan['plan_hash'] ?? ''))
+        || !is_array($plan['parts'] ?? null) || count($plan['parts']) < 1 || count($plan['parts']) > 40) {
+        throw new RuntimeException('Piano parti report non disponibile.');
+    }
+    $total = count($plan['parts']);
+    $seen = [];
+    foreach ($plan['parts'] as $index => $part) {
+        if (($part['part'] ?? null) !== $index || ($part['total'] ?? null) !== $total
+            || !is_array($part['artifact_keys'] ?? null) || count($part['artifact_keys']) === 0) {
+            throw new RuntimeException('Piano parti report non valido.');
+        }
+        foreach ($part['artifact_keys'] as $key) {
+            if (!is_string($key) || isset($seen[$key])) throw new RuntimeException('PDF duplicato nel piano parti.');
+            $seen[$key] = true;
+        }
+    }
+    $expected = array_column($claimed['attachments'], 'report_artifact_key');
+    $actual = array_keys($seen); sort($expected); sort($actual);
+    if ($expected !== $actual) throw new RuntimeException('PDF mancanti nel piano parti.');
+    foreach ($plan['parts'] as $part) {
+        $attachments = array_values(array_filter($claimed['attachments'], static fn(array $f): bool => in_array($f['report_artifact_key'], $part['artifact_keys'], true)));
+        if (array_sum(array_column($attachments, 'bytes')) > 3000000) throw new RuntimeException('Parte report oltre 3 MB.');
+        $suffix = $total > 1 ? ' — parte ' . ($part['part'] + 1) . '/' . $total : '';
+        $mail = buildMail($config, $to, (string)$email['oggetto'] . $suffix,
+            (string)$email['corpo'] . ($total > 1 ? "\n\nQuesta è la parte " . ($part['part'] + 1) . '/' . $total . '. I PDF del riepilogo sono distribuiti tra i messaggi numerati.' : ''), $attachments);
+        $identity = ['email_id' => $email['id'], 'worker_id' => $claimed['worker_id'], 'lock_token' => $email['lock_token'],
+            'part' => $part['part'], 'plan_hash' => $plan['plan_hash']];
+        $claim = apiRequest($config, array_merge($identity, ['action' => 'part_claim']));
+        if (($claim['status'] ?? '') === 'already_sent') continue;
+        if (($claim['status'] ?? '') !== 'claimed') throw new RuntimeException('Parte report con esito da verificare: nessun reinvio automatico.');
+        error_clear_last();
+        if (!sendMessage($mail)) {
+            $diagnostic = error_get_last();
+            $error = 'Aruba ha rifiutato la parte report ' . ($part['part'] + 1) . '/' . $total
+                . '; MIME bytes=' . strlen($mail['body']) . '; PHP: ' . safeHeader((string)($diagnostic['message'] ?? 'nessun avviso'));
+            apiRequest($config, array_merge($identity, ['action' => 'part_failed', 'error' => $error]));
+            throw new RuntimeException($error);
+        }
+        // An ambiguous handoff or lost acknowledgement leaves this part uncertain.
+        // A later explicit recovery skips only parts with persisted receipts.
+        apiRequest($config, array_merge($identity, ['action' => 'part_complete', 'message_id' => $mail['message_id']]));
+    }
+    apiRequest($config, ['action' => 'complete', 'email_id' => $email['id'], 'worker_id' => $claimed['worker_id'],
+        'lock_token' => $email['lock_token'], 'message_id' => 'multipart:' . $plan['plan_hash']]);
+    return ['status' => 'sent', 'email_id' => $email['id'], 'attachments' => count($claimed['attachments']), 'parts' => $total];
+}
+
 function processOne(array $config, bool $reportsOnly = false, bool $activityOnly = false, bool $anomalyOnly = false): array
 {
     if (($reportsOnly ? 1 : 0) + ($activityOnly ? 1 : 0) + ($anomalyOnly ? 1 : 0) > 1) {
@@ -350,6 +401,7 @@ function processOne(array $config, bool $reportsOnly = false, bool $activityOnly
                 $attachment['base64'] = $file['base64'];
             }
             unset($attachment);
+            return sendReportParts($config, $claimed, $reportRecipients);
         }
         $mail = buildMail(
             $config,
@@ -362,9 +414,12 @@ function processOne(array $config, bool $reportsOnly = false, bool $activityOnly
             apiRequest($config, ['action' => 'sending', 'email_id' => $email['id'],
                 'worker_id' => $claimed['worker_id'], 'lock_token' => $email['lock_token']]);
         }
+        if ($report) error_clear_last();
         if (!sendMessage($mail)) {
             $definitive = true;
-            throw new RuntimeException('La funzione mail() ha rifiutato il messaggio.');
+            $diagnostic = $report ? error_get_last() : null;
+            throw new RuntimeException('La funzione mail() ha rifiutato il messaggio.' . ($report
+                ? ' MIME bytes=' . strlen($mail['body']) . '; PHP: ' . safeHeader((string)($diagnostic['message'] ?? 'nessun avviso')) : ''));
         }
         apiRequest($config, [
             'action' => 'complete',
@@ -403,7 +458,7 @@ try {
     }
 
     if ($action === 'report_capabilities') {
-        respond(['report_protocol' => 1, 'report_recipient_lists' => true,
+        respond(['report_protocol' => 1, 'report_recipient_lists' => true, 'report_multipart' => 1,
             'queue_enabled' => ($config['queue_enabled'] ?? false) === true,
             'from_email' => safeHeader((string)$config['from_email'])]);
     }

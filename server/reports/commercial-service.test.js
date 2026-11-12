@@ -13,7 +13,7 @@ function fixture() {
   const agents=AGENTS.map((a,i)=>({codice:a.code,attivo_mexal:true,workspace_utente_id:'u'+i}));
   const recipients=resolveRecipients(agents,users),manifest=buildReportManifest(recipients).targets;
   const batch={id:'batch',period:'2026-10-01',owner_id:'owner',policy_hash:POLICY_HASH,status:'requested',manifest,recipients_hash:recipientsFingerprint(recipients)};
-  const tables={utenti:users,mexal_agenti:agents,commercial_report_settings:[{singleton:true,enabled:true,owner_id:'owner',policy_hash:POLICY_HASH}],commercial_report_batches:[batch],commercial_report_files:[],commercial_report_chunks:[],commercial_report_emails:[]};
+  const tables={utenti:users,mexal_agenti:agents,commercial_report_settings:[{singleton:true,enabled:true,owner_id:'owner',policy_hash:POLICY_HASH}],commercial_report_batches:[batch],commercial_report_files:[],commercial_report_chunks:[],commercial_report_emails:[],commercial_report_email_parts:[]};
   const db={tables,queueCalls:0,from(name){
     let filters=[],mode='read',payload,single=false;
     const q={select(){return q;},eq(k,v){filters.push(r=>r[k]===v);return q;},neq(k,v){filters.push(r=>r[k]!==v);return q;},in(k,vs){filters.push(r=>vs.includes(r[k]));return q;},order(){return q;},limit(){return q;},maybeSingle(){single=true;return q;},single(){single=true;return q;},insert(v){mode='insert';payload=v;return q;},update(v){mode='update';payload=v;return q;},delete(){mode='delete';return q;},then(resolve,reject){
@@ -139,7 +139,7 @@ test('worker per-message uncertainty is not reported as completed dispatch',asyn
  const env=globalThis.process.env,oldUrl=env.ARUBA_EMAIL_WORKER_URL,oldSecret=env.ARUBA_EMAIL_WORKER_SECRET;
  env.ARUBA_EMAIL_WORKER_URL='https://example.test/worker';env.ARUBA_EMAIL_WORKER_SECRET='fixture';
  try {
-  await assert.rejects(()=>dispatchCommercialReports(async(_url,options)=>Response.json(options.method==='GET'?{report_protocol:1,report_recipient_lists:true,queue_enabled:true}:{status:'ok',results:[{status:'uncertain'}]})),/Non ripetere invii incerti/);
+  await assert.rejects(()=>dispatchCommercialReports(async(_url,options)=>Response.json(options.method==='GET'?{report_protocol:1,report_recipient_lists:true,report_multipart:1,queue_enabled:true}:{status:'ok',results:[{status:'uncertain'}]})),/Non ripetere invii incerti/);
  } finally {
   if(oldUrl===undefined)delete env.ARUBA_EMAIL_WORKER_URL;else env.ARUBA_EMAIL_WORKER_URL=oldUrl;
   if(oldSecret===undefined)delete env.ARUBA_EMAIL_WORKER_SECRET;else env.ARUBA_EMAIL_WORKER_SECRET=oldSecret;

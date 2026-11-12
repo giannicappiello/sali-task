@@ -28,11 +28,11 @@ test('worker capability check never asks the order service to send anything',asy
     const result=await workerReady(async(url,options)=>{
       assert.equal(url,'https://example.test/worker.php?action=report_capabilities');
       assert.equal(options.method,'GET');assert.equal(options.body,undefined);
-      return {ok:true,json:async()=>({report_protocol:1,report_recipient_lists:true,queue_enabled:true,from_email:'orders@example.test'})};
+      return {ok:true,json:async()=>({report_protocol:1,report_recipient_lists:true,report_multipart:1,queue_enabled:true,from_email:'orders@example.test'})};
     });
     assert.equal(result.ready,true);
-    await assert.rejects(()=>workerReady(async()=>({ok:true,json:async()=>({status:'idle'})})),/elenchi destinatari/);
-    await assert.rejects(()=>workerReady(async(_url,options)=>{assert.equal(options.method,'GET');return {ok:true,json:async()=>({report_protocol:1,queue_enabled:true})};}),/elenchi destinatari/);
+    await assert.rejects(()=>workerReady(async()=>({ok:true,json:async()=>({status:'idle'})})),/suddivisione/);
+    await assert.rejects(()=>workerReady(async(_url,options)=>{assert.equal(options.method,'GET');return {ok:true,json:async()=>({report_protocol:1,queue_enabled:true})};}),/suddivisione/);
   }finally{if(oldUrl===undefined)delete process.env.ARUBA_EMAIL_WORKER_URL;else process.env.ARUBA_EMAIL_WORKER_URL=oldUrl;if(oldSecret===undefined)delete process.env.ARUBA_EMAIL_WORKER_SECRET;else process.env.ARUBA_EMAIL_WORKER_SECRET=oldSecret;}
 });
 test('configuration rejects non-admin requests and missing cron credentials before DB access',async()=>{

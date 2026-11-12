@@ -16,6 +16,7 @@ export default function CommercialReportResend({batch,request,onUpdated}) {
   {state&&<p>{state.files.length} PDF finalizzati su {batch.manifest.length}. {state.emails.filter(e=>e.status==='sent').length} email confermate su {state.emails.length}.</p>}
   {state?.emails.map(email=><div key={email.id} style={{margin:'12px 0'}}>
    <p>{email.recipient}: {email.status}{email.sent_at&&` — ${new Date(email.sent_at).toLocaleString('it-IT')}`}</p>
+   {!!email.parts?.length&&<p>Messaggi numerati: {email.parts.filter(p=>p.status==='sent').length} confermati su {email.parts[0].total}. {email.parts.map(p=>`${p.part+1}/${p.total}: ${p.status}`).join(' · ')}</p>}
    {email.last_error&&<p>Ultimo errore: {email.last_error}</p>}
    {email.status==='uncertain'&&<>
     <p>Un esito incerto può includere un invio riuscito senza conferma. Prima controlla le caselle e il registro del servizio. Il reinvio è disponibile dopo 10 minuti dal tentativo.</p>

@@ -21,6 +21,7 @@ function apiRequest(array $config, array $payload): array
     $GLOBALS['calls'][] = $payload;
     if (($GLOBALS['fail_ack'] ?? false) && in_array($payload['action'], ['accepted', 'complete'], true)) throw new RuntimeException('private body');
     if ($payload['action'] === 'claim') return $GLOBALS['claim'];
+    if ($payload['action'] === 'part_claim') return ['status' => $GLOBALS['part_claim_status'] ?? 'claimed'];
     if ($payload['action'] === 'attachment') {
         verify($payload['report_artifact_key'] === 'group:ph', 'wrong artifact key');
         return ['base64' => base64_encode($GLOBALS['corrupt'] ? 'damaged' : '%PDF-test-content')];
@@ -39,6 +40,7 @@ $GLOBALS['claim'] = ['status'=>'claimed', 'worker_id'=>'worker', 'email'=>[
     'destinatario'=>'manager@example.test', 'oggetto'=>'Report Commerciale mese di ottobre 2026', 'corpo'=>'Report squadra',
 ], 'attachments'=>[['filename'=>'Report_PH.pdf', 'report_artifact_key'=>'group:ph',
     'sha256'=>hash('sha256','%PDF-test-content'), 'bytes'=>strlen('%PDF-test-content')]]];
+$GLOBALS['claim']['report_parts'] = ['plan_hash'=>str_repeat('a',64),'parts'=>[['part'=>0,'total'=>1,'artifact_keys'=>['group:ph']]]];
 $GLOBALS['corrupt'] = false;
 $GLOBALS['calls'] = $GLOBALS['sent'] = [];
 $result = processOne($config, true);

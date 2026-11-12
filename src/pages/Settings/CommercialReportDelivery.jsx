@@ -39,8 +39,8 @@ export default function CommercialReportDelivery() {
         <h2>Destinatari e contenuto</h2>
         <p>Oggetto: <strong>Report Commerciale mese di [mese anno]</strong>. Ogni agente riceve soltanto il proprio PDF.</p>
         <table><thead><tr><th>Agente</th><th>Rete</th><th>Fonte</th><th>Email individuale</th></tr></thead><tbody>{plan.recipients.individual.map(a=><tr key={a.code}><td>{a.name}</td><td>{a.network==='ph'?'Farmacie':'Professional'}</td><td>{a.source==='ordiniph'?'Ordini PH':'Fatture'}</td><td>{a.to}</td></tr>)}</tbody></table>
-        <p>Un’unica email con i due consolidati PR/PH e tutti i PDF individuali a: <strong>{plan.recipients.aggregate.join(', ')}</strong>.</p>
-        <p>Ogni responsabile riceve nella stessa email il consolidato della propria squadra, con classifica agenti, e i report individuali dei soli agenti collegati. Se è anche agente, il suo report viene incluso nella stessa email.</p>
+        <p>I due consolidati PR/PH e tutti i PDF individuali vengono inviati a: <strong>{plan.recipients.aggregate.join(', ')}</strong>. Se necessario, gli allegati vengono distribuiti in email numerate per rispettare il limite di dimensione.</p>
+        <p>Ogni responsabile riceve il consolidato della propria squadra, con classifica agenti, e i report individuali dei soli agenti collegati. Se è anche agente, viene incluso anche il proprio report. Gli invii grandi vengono suddivisi in messaggi numerati.</p>
         <ul>{(plan.manifest?.managers||[]).map(m=><li key={m.id}>{m.name}: {m.to} — {m.agentCodes.map(c=>plan.agents.find(a=>a.code===c)?.name||c).join(', ')}</li>)}</ul>
         <p>Bertozzi, Bosco, Gudenzi, Esperto e MyPharma sono esclusi.</p>
       </section>

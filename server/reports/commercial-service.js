@@ -101,13 +101,14 @@ export async function reportPlan(auth) {
   return {enabled:settings?.enabled===true,agents:AGENTS,manifest:!contactsError?buildReportManifest(recipients):null,policyHash:POLICY_HASH,schedule:{day:settings?.delivery_day??2,time:'10:00',timezone:'Europe/Rome',nextDay:settings?.next_delivery_day??null,catchUp:true},batches,recipients,contactsReady:!contactsError,contactsError};
 }
 export async function reportArtifact(auth,input,{now=new Date(),dispatch=dispatchCommercialReports,schedule=waitUntil}={}) {
+  requireThat(['chunk','finalize','status','file'].includes(input.action),'Azione caricamento non valida.');
   const batch=await authorizedBatch(auth,input.batchId);
   if(input.action==='status') {
     const files=must(await auth.admin.from('commercial_report_files').select('artifact_key,sha256,bytes,pages,verified').eq('batch_id',batch.id));
-    const chunks=must(await auth.admin.from('commercial_report_chunks').select('artifact_key,part,total').eq('batch_id',batch.id));
+    const chunks=must(await auth.admin.from('commercial_report_chunks').select('artifact_key,part,total,base64').eq('batch_id',batch.id));
     const missing=batch.manifest.filter(target=>!files.some(file=>file.artifact_key===target.key)).map(target=>{
       const parts=chunks.filter(chunk=>chunk.artifact_key===target.key),total=parts[0]?.total??null;
-      return {artifactKey:target.key,name:target.name,total,receivedParts:parts.map(part=>part.part).sort((a,b)=>a-b),missingParts:total===null?null:Array.from({length:total},(_,part)=>part).filter(part=>!parts.some(chunk=>chunk.part===part))};
+      return {artifactKey:target.key,name:target.name,total,uploadHash:uploadHash(parts),receivedParts:parts.map(part=>part.part).sort((a,b)=>a-b),missingParts:total===null?null:Array.from({length:total},(_,part)=>part).filter(part=>!parts.some(chunk=>chunk.part===part))};
     });
     return {batch:{id:batch.id,period:batch.period,status:batch.status,manifest:batch.manifest,deliveryDay:batch.delivery_day??10},files,missing,emails:must(await auth.admin.from('commercial_report_emails').select('delivery_key,status,sent_at').eq('batch_id',batch.id))};
   }
@@ -119,7 +120,7 @@ export async function reportArtifact(auth,input,{now=new Date(),dispatch=dispatc
   requireThat(batch.status==='requested','Lotto già accodato o non disponibile; leggere lo stato prima di ripetere.',409);
   const existing=must(await auth.admin.from('commercial_report_files').select('sha256').eq('batch_id',batch.id).eq('artifact_key',target.key).maybeSingle());
   if(existing){
-    requireThat(input.action==='finalize'&&existing.sha256===input.sha256,'Esiste già un PDF per questo report. Leggere lo stato.',409);
+    requireThat(['finalize','file'].includes(input.action)&&existing.sha256===input.sha256,'Esiste già un PDF per questo report. Leggere lo stato.',409);
     return queueIfComplete(auth,batch,recipients,{now,dispatch,schedule});
   }
   if(input.action==='chunk') {
@@ -130,18 +131,30 @@ export async function reportArtifact(auth,input,{now=new Date(),dispatch=dispatc
     else must(await auth.admin.from('commercial_report_chunks').insert({batch_id:batch.id,artifact_key:target.key,part:input.part,total:input.total,base64:input.base64}));
     return {status:old?'already_stored':'stored',part:input.part};
   }
-  requireThat(input.action==='finalize'&&input.verified===true&&input.period===batch.period&&input.network===target.network&&input.source===target.source,'Verifica PDF, periodo, fonte o rete non valida.');
+  requireThat(['finalize','file'].includes(input.action)&&input.verified===true&&input.period===batch.period&&input.network===target.network&&input.source===target.source,'Verifica PDF, periodo, fonte o rete non valida.');
   requireThat(/^[a-f0-9]{64}$/.test(input.sha256||''),'SHA-256 non valido.');
   const chunks=must(await auth.admin.from('commercial_report_chunks').select('part,total,base64').eq('batch_id',batch.id).eq('artifact_key',target.key).order('part'));
-  requireThat(chunks.length>0&&chunks.every((c,i)=>c.part===i&&c.total===chunks.length),'Blocchi incompleti.');
-  const encoded=chunks.map(c=>c.base64).join(''),bytes=Buffer.from(encoded,'base64');
+  if(input.action==='file') {
+    requireThat(typeof input.base64==='string'&&input.base64.length<=Math.ceil(MAX_PDF_BYTES/3)*4,'PDF superiore a 2 MB.');
+    requireThat(input.expectedUploadHash===uploadHash(chunks),'Caricamento variato: aggiornare lo stato prima di ripetere.',409);
+    const total=Math.ceil(input.base64.length/40000);
+    const matching=chunks.every(c=>c.total===total&&c.base64===input.base64.slice(c.part*40000,(c.part+1)*40000));
+    requireThat(matching||input.replaceIncomplete===true,'Il PDF differisce dal caricamento incompleto. Confermare la sostituzione della sola bozza.',409);
+  } else requireThat(chunks.length>0&&chunks.every((c,i)=>c.part===i&&c.total===chunks.length),'Blocchi incompleti.');
+  const encoded=input.action==='file'?input.base64:chunks.map(c=>c.base64).join(''),bytes=Buffer.from(encoded,'base64');
   requireThat(bytes.length<=MAX_PDF_BYTES&&bytes.subarray(0,5).toString()==='%PDF-'&&bytes.toString('base64')===encoded,'PDF non valido o superiore a 2 MB.');
   requireThat(createHash('sha256').update(bytes).digest('hex')===input.sha256,'Integrità PDF non verificata.');
   const doc=await PDFDocument.load(bytes);requireThat(doc.getPageCount()>=3,'Report incompleto.');
-  must(await auth.admin.from('commercial_report_files').insert({batch_id:batch.id,artifact_key:target.key,period:batch.period,network:target.network,source:target.source,filename:`Report_Commerciale_${target.key.replace(/[^a-zA-Z0-9_-]/g,'_')}_${batch.period.slice(0,7)}.pdf`,base64:encoded,sha256:input.sha256,bytes:bytes.length,verified:true,pages:doc.getPageCount()}));
-  must(await auth.admin.from('commercial_report_chunks').delete().eq('batch_id',batch.id).eq('artifact_key',target.key));
+  const file={batch_id:batch.id,artifact_key:target.key,period:batch.period,network:target.network,source:target.source,filename:`Report_Commerciale_${target.key.replace(/[^a-zA-Z0-9_-]/g,'_')}_${batch.period.slice(0,7)}.pdf`,base64:encoded,sha256:input.sha256,bytes:bytes.length,verified:true,pages:doc.getPageCount()};
+  if(input.action==='file')must(await auth.admin.rpc('commercial_report_store_pdf',{p_actor:auth.profile.id,p_batch:batch.id,p_artifact:target.key,p_snapshot:chunkSnapshot(chunks),p_file:file}));
+  else {
+    must(await auth.admin.from('commercial_report_files').insert(file));
+    must(await auth.admin.from('commercial_report_chunks').delete().eq('batch_id',batch.id).eq('artifact_key',target.key));
+  }
   return queueIfComplete(auth,batch,recipients,{now,dispatch,schedule});
 }
+const chunkSnapshot=chunks=>[...chunks].sort((a,b)=>a.part-b.part).map(c=>({part:c.part,total:c.total,md5:createHash('md5').update(c.base64||'').digest('hex')}));
+const uploadHash=chunks=>createHash('sha256').update(JSON.stringify(chunkSnapshot(chunks))).digest('hex');
 async function queueIfComplete(auth,batch,recipients,{now,dispatch,schedule}) {
   const files=must(await auth.admin.from('commercial_report_files').select('artifact_key,period,network,source,bytes,verified').eq('batch_id',batch.id));
   if(files.length!==batch.manifest.length)return {status:'uploaded',received:files.length,expected:batch.manifest.length};

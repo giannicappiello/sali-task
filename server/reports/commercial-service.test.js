@@ -28,6 +28,11 @@ function fixture() {
     if(name==='commercial_report_queue'){db.queueCalls++;tables.commercial_report_emails=args.p_jobs;batch.status='queued';return {data:null};}
     if(name==='commercial_report_claim_email')return {data:tables.commercial_report_emails[0]||null};
     if(name==='commercial_report_finish_batch')return {data:false};
+    if(name==='commercial_report_store_pdf'){
+      db.storedUpload=args;tables.commercial_report_files.push(args.p_file);
+      tables.commercial_report_chunks=tables.commercial_report_chunks.filter(c=>c.batch_id!==args.p_batch||c.artifact_key!==args.p_artifact);
+      return {data:true};
+    }
     throw new Error('Unexpected RPC '+name);
   }};
   return {auth:{admin:db,profile:{id:'owner',ruoli:{amministratore_workspace:true}}},db,batch,recipients,manifest};
@@ -70,6 +75,22 @@ test('worker blocks changed contacts before handing off any PDF',async()=>{
   f.db.tables.utenti[0].attivo=false;
   await assert.rejects(()=>claimCommercialEmail(f.db,'worker'),/disattivato/);
   assert.equal(f.db.tables.commercial_report_emails[0].status,'failed');
+});
+
+test('direct file upload verifies hash and archives/replaces only an explicitly selected unfinished draft',async()=>{
+ const f=fixture(),input=await pdfUpload(f.manifest[0]);
+ f.db.tables.commercial_report_chunks=[{batch_id:'batch',artifact_key:input.artifactKey,part:0,total:21,base64:'OLD'}];
+ const status=await reportArtifact(f.auth,{action:'status',batchId:'batch'});
+ const expectedUploadHash=status.missing[0].uploadHash;
+ await assert.rejects(()=>reportArtifact(f.auth,{...input,action:'file',expectedUploadHash}),/differisce/);
+ await assert.rejects(()=>reportArtifact(f.auth,{...input,action:'file',expectedUploadHash:'stale',replaceIncomplete:true}),/Caricamento variato/);
+ await assert.rejects(()=>reportArtifact(f.auth,{...input,action:'file',expectedUploadHash,replaceIncomplete:true,sha256:'0'.repeat(64)}),/Integrità/);
+ assert.equal(f.db.storedUpload,undefined);
+ const result=await reportArtifact(f.auth,{...input,action:'file',expectedUploadHash,replaceIncomplete:true});
+ assert.equal(result.status,'uploaded');assert.equal(f.db.tables.commercial_report_files.length,1);
+ assert.equal(f.db.storedUpload.p_actor,'owner');assert.equal(f.db.storedUpload.p_snapshot[0].total,21);
+ assert.equal(f.db.tables.commercial_report_chunks.length,0);
+ await assert.rejects(()=>reportArtifact(f.auth,{...input,action:'file',expectedUploadHash,sha256:'0'.repeat(64)}),/Esiste già un PDF/);
 });
 
 test('status exposes received and missing chunks without revealing contents or sending',async()=>{

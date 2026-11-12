@@ -1,11 +1,12 @@
 import {useEffect,useState} from 'react';
 import {Link} from 'react-router-dom';
 import {supabase} from '../../lib/supabaseClient';
+import CommercialReportUpload from './CommercialReportUpload';
 
-async function request(body) {
+async function request(body,batchId) {
   const {data:{session}}=await supabase.auth.getSession();
   if(!session)throw new Error('Accedi nuovamente a Workspace.');
-  const response=await fetch('/api/mexal/automation?route=commercial-reports',{
+  const response=await fetch('/api/mexal/automation?route=commercial-reports'+(batchId?'&batchId='+encodeURIComponent(batchId):''),{
     method:body?'POST':'GET',headers:{Authorization:'Bearer '+session.access_token,'Content-Type':'application/json'},
     ...(body?{body:JSON.stringify(body)}:{}),
   });
@@ -31,6 +32,7 @@ export default function CommercialReportDelivery() {
     {!plan?<p>Caricamento configurazione…</p>:<>
       <p><strong>{plan.enabled?'Piano attivo':'Piano non attivo'}</strong></p>
       {plan.contactsError&&<p role="alert">{plan.contactsError}</p>}
+      {plan.batches.filter(b=>b.status==='requested').map(batch=><CommercialReportUpload key={batch.id} batch={batch} request={request} onUploaded={load}/>)}
       <section className="panel" style={{padding:20,marginBottom:20}}>
         <h2>Destinatari e contenuto</h2>
         <p>Oggetto: <strong>Report Commerciale mese di [mese anno]</strong>. Ogni agente riceve soltanto il proprio PDF.</p>

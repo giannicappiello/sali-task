@@ -3,7 +3,7 @@ import { Buffer } from 'node:buffer';
 import { authorizeAIRequest } from '../ai/access.js';
 import { createProgremesReadonlyAdmin } from '../progremes-readonly-auth.js';
 import {AGENTS,POLICY_HASH,must,requireThat,sealToken} from './commercial-policy.js';
-import {reportSettings,reportPlan,workerReady,triggerMonthlyReports,loadReportRecipients} from './commercial-service.js';
+import {reportSettings,reportPlan,reportArtifact,workerReady,triggerMonthlyReports,loadReportRecipients} from './commercial-service.js';
 
 export async function handleCommercialReports(req,res,{authorize=authorizeAIRequest,admin=createProgremesReadonlyAdmin,workerCheck=workerReady}={}) {
   try {
@@ -16,9 +16,14 @@ export async function handleCommercialReports(req,res,{authorize=authorizeAIRequ
     const auth=await authorize(req);
     requireThat(auth.profile.ruoli?.amministratore_workspace===true,'Configurazione riservata agli amministratori Workspace.',403);
     if(req.method==='GET') {
+      if(req.query.batchId)return res.json(await reportArtifact(auth,{action:'status',batchId:req.query.batchId}));
       const plan=await reportPlan(auth),settings=await reportSettings(auth.admin);
       let mail;try{mail=await workerCheck();}catch(error){mail={ready:false,message:error.message};}
       return res.json({...plan,triggerId:settings?.trigger_id||'',hasToken:!!settings?.token_encrypted,mail});
+    }
+    if(req.method==='POST'&&req.body?.action==='upload') {
+      const {batchId,artifactKey,period,network,source,base64,sha256,verified,expectedUploadHash,replaceIncomplete}=req.body;
+      return res.json(await reportArtifact(auth,{action:'file',batchId,artifactKey,period,network,source,base64,sha256,verified,expectedUploadHash,replaceIncomplete}));
     }
     requireThat(req.method==='POST'&&req.body?.action==='configure','Richiesta non valida.');
     const old=await reportSettings(auth.admin);

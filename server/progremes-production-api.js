@@ -1,3 +1,4 @@
+import { previewForecastLineCancellation, cancelForecastLine } from "./workspacemes-forecast-line-cancellation.js";
 import { createHash, randomUUID } from "node:crypto";
 import { Buffer } from "node:buffer";
 import process from "node:process";
@@ -88,7 +89,9 @@ export async function previewProductionCancellation(req, res, { admin = adminCli
   const requestId = String(req.body?.requestId || "").trim();
   if (!requestId) return res.status(400).json({ error: "RdP obbligatoria.", code: "INVALID_REQUEST" });
   try {
-    return res.status(200).json(await previewCoordinatedProductionCancellation({ admin, requestId, requestedBy, client }));
+    return res.status(200).json(await (req.body?.workspaceLineId !== undefined ? previewForecastLineCancellation({
+      admin, requestId, requestedBy, client, workspaceLineId: req.body.workspaceLineId,
+    }) : previewCoordinatedProductionCancellation({ admin, requestId, requestedBy, client })));
   } catch (error) {
     return res.status(Number(error.status) >= 400 && Number(error.status) <= 599 ? Number(error.status) : 409)
       .json({ error: error.message || "Verifica annullamento non riuscita.", code: error.code || "CANCELLATION_PREVIEW_FAILED" });
@@ -103,6 +106,11 @@ export async function cancelProductionRequest(req, res, { admin = adminClient(),
   if (reason.length < 5 || reason.length > 1000)
     return res.status(400).json({ error: "Il motivo è obbligatorio e deve contenere da 5 a 1000 caratteri.", code: "INVALID_CANCELLATION_REASON" });
   try {
+    if (req.body?.workspaceLineId !== undefined) {
+      const result = await cancelForecastLine({ admin, requestId, reason, requestedBy, client,
+        workspaceLineId: req.body.workspaceLineId, previews: req.body?.previews });
+      return res.status(200).json({ ...result, scope: "forecastLine", cancelled: true });
+    }
     const cancelled = await cancelCoordinatedProductionRequest({ admin, requestId, reason, requestedBy, client, previews: req.body?.previews });
     return res.status(200).json({ cancelled: true, id: requestId, externalId: cancelled.external_id,
       status: "Cancelled", cancelledAt: cancelled.cancelled_at, warnings: cancelled.warnings || [],

@@ -41,6 +41,18 @@ test("annullamento residuo: mostra RdP55 protetta, richiede motivo e conferma, b
     await act(async () => { submit().click(); });
     assert.match(container.textContent, /Stato modificato: ripetere anteprima/); assert.equal(submit().disabled, true);
     assert.equal(container.querySelector('input[type="checkbox"]').checked, false);
+    const scopedRequest = { id: "rdp271", number: "RDP271", ordersLabel: "OC/2/507",
+      cancelLine: { id: "line507", articleCode: "FPDET01", quantity: 15000, octUom: "KG" } };
+    await act(async () => { root.render(createElement(Dialog, { ...props, request: scopedRequest,
+      onPreview: async (id, lineId) => {
+        assert.equal(id, "rdp271"); assert.equal(lineId, "line507");
+        return { allowed: true, previews, cancelledOrders: [], preservedOrders: [{id:6481,number:"RDP271-05"}], blocks: [],
+          cancelledForecasts:[{octReference:"OC/2/507",articleCode:"FPDET01",quantity:15000,unit:"KG"}] };
+      } })); });
+    assert.match(container.textContent, /Annulla singola previsione/);
+    assert.match(container.textContent, /OC\/2\/507.*FPDET01.*15000 KG/);
+    assert.match(container.textContent, /RDP271-05.*invariata, documenti conservati/);
+    assert.match(container.textContent, /Le altre righe, gli OP e tutti i documenti restano conservati/);
     await act(async () => { root.render(createElement(Dialog, { ...props, request: { id: "other" }, onPreview: async () => { throw new Error("MES non raggiungibile"); } })); });
     assert.match(container.textContent, /MES non raggiungibile/); assert.equal(submit().disabled, true);
   } finally { await act(async () => root.unmount()); await window.happyDOM.close(); }

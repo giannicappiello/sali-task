@@ -946,12 +946,12 @@ export default async function handler(req, res) {
       }
       case "progremes_production_cancel_preview": {
         const admin = await createAdmin(req, "rdp.cancel");
-        req.body = { requestId: body.requestId };
+        req.body = { requestId: body.requestId, ...(body.workspaceLineId !== undefined ? { workspaceLineId: body.workspaceLineId } : {}) };
         return previewProductionCancellation(req, res, { admin: admin.supabase, requestedBy: admin.authUserId });
       }
       case "progremes_production_cancel": {
         const admin = await createAdmin(req, "rdp.cancel");
-        req.body = { requestId: body.requestId, reason: body.reason, previews: body.previews };
+        req.body = { requestId: body.requestId, reason: body.reason, previews: body.previews, ...(body.workspaceLineId !== undefined ? { workspaceLineId: body.workspaceLineId } : {}) };
         return cancelProductionRequest(req, res, { admin: admin.supabase, requestedBy: admin.authUserId });
       }
       case "warehouse_article_sync": {

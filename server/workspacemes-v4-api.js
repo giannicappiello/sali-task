@@ -1,3 +1,4 @@
+import { cancelledForecastLineKeys, forecastLineKey } from "./workspacemes-forecast-line-cancellation.js";
 import { randomUUID } from "node:crypto";
 import { buildProductionDemand } from "./production-netting.js";
 import { aggregateWorkspaceHashes, createProgremesProductionClient } from "./progremes-production-client.js";
@@ -15,6 +16,13 @@ async function ensureRequestNotCancelling(admin, requestId) {
     throw fail("RdP annullata o non trovata.", "RDP_CANCELLED");
   const pending = ensure(await admin.from("workspace_rdp_cancellations").select("request_id").eq("request_id", requestId).neq("status", "REJECTED").limit(1));
   if (pending.length) throw fail("RdP in annullamento o già annullata: completare la riconciliazione, senza riconfermarla.", "RDP_CANCELLATION_PENDING");
+  const lineEvents = ensure(await admin.from("workspace_production_request_audit").select("action,details")
+    .eq("production_request_id", requestId).in("action", ["FORECAST_LINE_CANCELLATION_PENDING", "FORECAST_LINE_CANCELLATION_REJECTED", "FORECAST_LINE_CANCELLED"]));
+  const completedLines = new Set(lineEvents.filter(row => row.action === "FORECAST_LINE_CANCELLED").map(row => row.details?.workspaceLineId));
+  const rejectedAttempts = new Set(lineEvents.filter(row => row.action === "FORECAST_LINE_CANCELLATION_REJECTED").map(row => row.details?.attemptId));
+  if (lineEvents.some(row => row.action === "FORECAST_LINE_CANCELLATION_PENDING" &&
+      !completedLines.has(row.details?.workspaceLineId) && !rejectedAttempts.has(row.details?.attemptId)))
+    throw fail("Annullamento di una riga da riconciliare prima di ricalcolare o confermare.", "FORECAST_LINE_CANCELLATION_PENDING");
   const source = await admin.rpc("workspace_rdp_has_deleted_oct", { p_request_id: requestId });
   if (source.error) throw source.error;
   if (source.data === true) throw fail("Un OCT della RdP è stato eliminato in Mexal: completare la cancellazione MES prima di ricalcolare o confermare.", "OCT_DELETED_IN_MEXAL");
@@ -67,7 +75,12 @@ async function loadDemand(admin, requestId) {
   const demand = snapshots[0]?.snapshot;
   if (!Array.isArray(demand?.items) || !demand.items.length || !Array.isArray(demand?.orders) || !demand.orders.length)
     throw fail("Snapshot domanda V4 incompleto.", "V4_DEMAND_REQUIRED");
-  return { request, demand, capturedAt: snapshots[0].captured_at };
+  const cancelled = await cancelledForecastLineKeys(admin, [requestId]);
+  const activeItems = demand.items.filter(item => !cancelled.has(forecastLineKey(requestId, item.lineId)));
+  if (!activeItems.length) throw fail("Tutte le previsioni residue della RdP sono annullate.", "V4_NO_ACTIVE_DEMAND");
+  const activeOrders = new Set(activeItems.map(item => item.orderId));
+  return { request, demand: { ...demand, items: activeItems, orders: demand.orders.filter(order => activeOrders.has(order.orderId)) },
+    capturedAt: snapshots[0].captured_at };
 }
 
 export async function workspaceV4FinishedArticleCodes(admin, requestId) {
@@ -172,6 +185,9 @@ export async function confirmWorkspaceV4({ admin, previewId, reason, requestedBy
     reason: clean(reason), decidedBy: `workspace:${requestedBy || "service"}`,
     correlationId: preview.correlation_id, causationId: preview.external_id };
   if (!preview.snapshot?.confirmationRecovery && preview.snapshot?.commercialDemand) {
+    const cancelled = await cancelledForecastLineKeys(admin, [preview.production_request_id]);
+    if (preview.snapshot.commercialDemand.items.some(item => cancelled.has(forecastLineKey(preview.production_request_id, item.lineId))))
+      throw fail("La preview contiene righe annullate: ricalcolare la RdP.", "V4_CANCELLED_LINE_PREVIEW");
     const current = await refreshWorkspaceV4Demand(admin, preview.snapshot.commercialDemand, demandReader);
     if (aggregateWorkspaceHashes(current.orders.map(order => order.versionHash)) !== preview.oct_hash)
       throw fail("L’OCT è cambiato dopo l’anteprima: premi Aggiorna RdP e conferma i nuovi dati.", "STALE_V4_PREVIEW");

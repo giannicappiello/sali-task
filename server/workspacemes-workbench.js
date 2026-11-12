@@ -1,3 +1,4 @@
+import { cancelledForecastLineKeys, forecastLineKey } from "./workspacemes-forecast-line-cancellation.js";
 import { authoritativeArticleUnit, resolveOctUnitOfMeasure } from "./mexal/unit-of-measure.js";
 import { evaluateProductionRequestCancellation } from "./workspacemes-rdp-cancellation.js";
 import { assertPrivateWorkbenchDetailScope, readRowsByIds } from "./private-orders-workbench.js";
@@ -334,6 +335,7 @@ export async function listProductionWorkbench({ admin, diagnostics = [], product
   const orderIdsByRequest = new Map((requests || []).map((request) => [text(request.id), new Set([request.ordine_id].filter(Boolean).map(text))]));
   for (const request of requests || []) if (!cancelled(request) && request.ordine_id && !requestByOrder.has(text(request.ordine_id))) requestByOrder.set(text(request.ordine_id), request);
   const requestIds = (requests || []).map((row) => row.id);
+  const cancelledLineKeys = await cancelledForecastLineKeys(admin, requestIds);
   const confirmedV4RequestIds = new Set();
   const requestItemByRequestAndLine = new Map();
   if (requestIds.length) {
@@ -393,12 +395,14 @@ export async function listProductionWorkbench({ admin, diagnostics = [], product
         residualQuantity: Math.max(0, orderedQuantity - fulfilledQuantity),
         unit: resolveWorkbenchOctUnit(line, product),
         deliveryDate: line.data_consegna || order.data_consegna,
-        productionStatus: workbenchLineProductionState(line, request, productionState, requestItem),
+        productionStatus: request && cancelledLineKeys.has(forecastLineKey(request.id, line.id)) ? "ANNULLATA" :
+          workbenchLineProductionState(line, request, productionState, requestItem),
       };
     });
     const incompleteProduction = lineRows.some((line) => ["OP MANCANTE", "OP NON RICONCILIATO"].includes(line.productionStatus));
-    const effectiveStage = incompleteProduction ? "blocked" : productionState.stage;
-    const effectiveStatus = incompleteProduction ? "OP INCOMPLETI" : productionState.status;
+    const allForecastsCancelled = lineRows.length > 0 && lineRows.every(line => line.productionStatus === "ANNULLATA");
+    const effectiveStage = allForecastsCancelled ? "history" : incompleteProduction ? "blocked" : productionState.stage;
+    const effectiveStatus = allForecastsCancelled ? "Previsioni annullate" : incompleteProduction ? "OP INCOMPLETI" : productionState.status;
     return {
       id: order.id, origin: order.origine, label: octLabel(order), sigla: order.mexal_sigla, serie: order.mexal_serie, numero: order.mexal_numero,
       customer: customerName(order, customersByCode),
@@ -413,7 +417,7 @@ export async function listProductionWorkbench({ admin, diagnostics = [], product
       quantity: productive.reduce((total, line) => total + number(line.quantita), 0),
       units: resolveWorkbenchUnits(productive, productsByCode),
       lines: lineRows,
-      ready: !incompleteProduction && !order.mexal_eliminato_il && productive.length > 0 && order.cliente_mexal_risolto !== false && !orderDiagnostics.some(diagnosticBlocks),
+      ready: !allForecastsCancelled && !incompleteProduction && !order.mexal_eliminato_il && productive.length > 0 && order.cliente_mexal_risolto !== false && !orderDiagnostics.some(diagnosticBlocks),
       requestId: request?.id || null, requestExternalId: request?.external_id || null, rdpNumber: request?.rdp_number || null,
       diagnostics: orderDiagnostics.map(publicDiagnostic),
     };
@@ -463,6 +467,7 @@ export async function productionWorkbenchDetail({ admin, orderId = null, request
     throw Object.assign(new Error("OCT o RdP non disponibile per il cliente associato."), { status: 404 });
   }
   if (scopeOnly) return { request, orders: (orders || []).map(order => ({ id: order.id, label: octLabel(order) })) };
+  const cancelledLineKeys = await cancelledForecastLineKeys(admin, request ? [request.id] : []);
   const currentLines = activeOctLines(lines);
   const visibleLines = request ? workbenchDetailLines(lines, requestItemsResult.data || []) : currentLines;
   const customersByCode = await loadCustomers(admin, orders);
@@ -567,7 +572,11 @@ export async function productionWorkbenchDetail({ admin, orderId = null, request
         octUom: resolveWorkbenchOctUnit(line, product), productionUom: line.riga_descrittiva === true ? null : requestItem?.unita_misura_produzione || authoritativeArticleUnit(product) || authoritativeArticleUnit(product?.dati_mexal),
         mappingStatus: workbenchLineMappingStatus(line, requestItem, finishedBom), conversion: line.riga_descrittiva === true ? null : requestItem?.conversione || null,
         finishedBom,
-        mesStatus: line.riga_descrittiva === true ? null : requestItem?.mes_status || proposal?.stato || null, mesAnalysis: line.riga_descrittiva === true ? null : requestItem?.mes_payload || null,
+        forecastCancelled: Boolean(request && cancelledLineKeys.has(forecastLineKey(request.id, line.id))),
+        forecastCancellationAvailable: Number(request?.contract_version) === 4 && Boolean(requestItem) &&
+          !cancelledLineKeys.has(forecastLineKey(request.id, line.id)),
+        mesStatus: line.riga_descrittiva === true ? null : request && cancelledLineKeys.has(forecastLineKey(request.id, line.id)) ?
+          "CANCELLED" : requestItem?.mes_status || proposal?.stato || null, mesAnalysis: line.riga_descrittiva === true ? null : requestItem?.mes_payload || null,
         proposal: line.riga_descrittiva === true ? null : proposal || null,
         diagnostics: diagnostics.filter((row) => visibleDiagnostic(row) && diagnosticMatchesWorkbenchLine(row, line, request)).map(publicDiagnostic),
       };

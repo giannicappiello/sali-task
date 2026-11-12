@@ -6,7 +6,7 @@ function fixture() {
   const tables = {
     workspace_v4_previews: [{ id: 1, production_request_id: 2, status: "READY", preview_hash: "hash", external_id: "preview", local_row_version: 1, snapshot: { demands: [{ workspaceLineId: "line" }] } }],
     workspace_production_requests: [{ id: 2, external_id: "request", rdp_number: 167, workspace_status: "READY" }],
-    workspace_v4_preview_materials: [], workspace_rdp_cancellations: [], workspace_v4_confirmation_mirrors: [],
+    workspace_production_request_audit: [], workspace_v4_preview_materials: [], workspace_rdp_cancellations: [], workspace_v4_confirmation_mirrors: [],
   };
   const admin = {
     from(name) {
@@ -14,6 +14,7 @@ function fixture() {
       const query = { select() { return this; }, limit() { return this; },
         eq(k,v) { filters.push(row => row[k] === v); return this; },
         neq(k,v) { filters.push(row => row[k] !== v); return this; },
+        in(k,values) { filters.push(row => values.includes(row[k])); return this; },
         is(k) { assert.equal(k, "snapshot->confirmationRecovery"); filters.push(row => !row.snapshot?.confirmationRecovery); return this; },
         update(value) { update = value; return this; },
         then(resolve) { const rows = tables[name].filter(row => filters.every(f => f(row))); if (update) rows.forEach(row => Object.assign(row, structuredClone(update))); return Promise.resolve({ data: structuredClone(rows) }).then(resolve); },
@@ -160,4 +161,22 @@ test("la revisione OP recupera un esito UPDATED senza creare o reinviare un ordi
   assert.deepEqual((await confirmWorkspaceV4(args)).mes,response);
   assert.deepEqual((await confirmWorkspaceV4(args)).mes,response);
   assert.equal(calls,1);
+});
+
+
+test("pending single-line cancellation blocks reconfirmation until its outcome is known", async () => {
+  const { admin, tables } = fixture();
+  tables.workspace_production_request_audit.push({production_request_id:2,action:"FORECAST_LINE_CANCELLATION_PENDING",
+    details:{workspaceLineId:"line",attemptId:"attempt"}});
+  await assert.rejects(confirmWorkspaceV4({admin,previewId:1,reason:"Test verifica",
+    client:{v4ConfirmationEnabled:()=>true,confirmV4:()=>assert.fail("No MES call")}}),
+    {code:"FORECAST_LINE_CANCELLATION_PENDING"});
+});
+test("a cancelled line in an old preview cannot be reconfirmed", async () => {
+  const { admin, tables } = fixture();
+  tables.workspace_v4_previews[0].snapshot.commercialDemand={items:[{lineId:"line"}]};
+  tables.workspace_production_request_audit.push({production_request_id:2,action:"FORECAST_LINE_CANCELLED",details:{workspaceLineId:"line"}});
+  await assert.rejects(confirmWorkspaceV4({admin,previewId:1,reason:"Test verifica",
+    client:{v4ConfirmationEnabled:()=>true,confirmV4:()=>assert.fail("No MES call")}}),
+    {code:"V4_CANCELLED_LINE_PREVIEW"});
 });

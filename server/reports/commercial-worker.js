@@ -48,6 +48,7 @@ export async function commercialWorkerAction(db,body) {
     return {status:'completed'};
   }
   requireThat(body.action==='retry','Azione report non riconosciuta.');
+  if(job.status==='uncertain')must(await db.from('commercial_report_emails').update({last_error:String(body.error||'Esito trasporto non confermato.').slice(0,1000)}).eq('id',id).eq('status','uncertain').eq('lock_token',job.lock_token));
   // Both pre-send transport loss and post-send acknowledgement loss are ambiguous.
   // Leave uncertain: a human must check the actual mail delivery before any resend.
   return {status:job.status==='sent'?'already_completed':'uncertain_requires_review'};

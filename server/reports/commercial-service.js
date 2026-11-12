@@ -110,7 +110,7 @@ export async function reportArtifact(auth,input,{now=new Date(),dispatch=dispatc
       const parts=chunks.filter(chunk=>chunk.artifact_key===target.key),total=parts[0]?.total??null;
       return {artifactKey:target.key,name:target.name,total,uploadHash:uploadHash(parts),receivedParts:parts.map(part=>part.part).sort((a,b)=>a-b),missingParts:total===null?null:Array.from({length:total},(_,part)=>part).filter(part=>!parts.some(chunk=>chunk.part===part))};
     });
-    return {batch:{id:batch.id,period:batch.period,status:batch.status,manifest:batch.manifest,deliveryDay:batch.delivery_day??10},files,missing,emails:must(await auth.admin.from('commercial_report_emails').select('delivery_key,status,sent_at').eq('batch_id',batch.id))};
+    return {batch:{id:batch.id,period:batch.period,status:batch.status,manifest:batch.manifest,deliveryDay:batch.delivery_day??10},files,missing,emails:must(await auth.admin.from('commercial_report_emails').select('id,delivery_key,recipient,status,claimed_at,sent_at,last_error').eq('batch_id',batch.id))};
   }
   const recipients=await loadReportRecipients(auth.admin);
   requireThat(recipientsFingerprint(recipients)===batch.recipients_hash,'Contatti o collegamenti variati: il lotto richiede revisione.',409);
@@ -155,6 +155,16 @@ export async function reportArtifact(auth,input,{now=new Date(),dispatch=dispatc
 }
 const chunkSnapshot=chunks=>[...chunks].sort((a,b)=>a.part-b.part).map(c=>({part:c.part,total:c.total,md5:createHash('md5').update(c.base64||'').digest('hex')}));
 const uploadHash=chunks=>createHash('sha256').update(JSON.stringify(chunkSnapshot(chunks))).digest('hex');
+export async function authorizeReportResend(auth,input,{dispatch=dispatchCommercialReports,schedule=waitUntil}={}) {
+  const batch=await authorizedBatch(auth,input.batchId);
+  requireThat(input.acceptDuplicate===true&&typeof input.reason==='string'&&input.reason.trim().length>=10,'Confermare esplicitamente il reinvio e il possibile duplicato.');
+  requireThat(/^[a-f0-9-]{36}$/i.test(input.requestId||'')&&/^[a-f0-9-]{36}$/i.test(input.emailId||''),'Richiesta di reinvio non valida.');
+  const recipients=await loadReportRecipients(auth.admin);
+  requireThat(recipientsFingerprint(recipients)===batch.recipients_hash&&isDeepStrictEqual(buildReportManifest(recipients).targets,batch.manifest),'Piano o destinatari variati: richiede revisione.',409);
+  const requeued=must(await auth.admin.rpc('commercial_report_authorize_resend',{p_actor:auth.profile.id,p_batch:batch.id,p_email:input.emailId,p_claimed_at:input.claimedAt,p_request:input.requestId,p_reason:input.reason,p_accept_duplicate:true}));
+  if(requeued)schedule(dispatch().catch(()=>console.error('Authorized commercial resend requires review',{batchId:batch.id,emailId:input.emailId})));
+  return {status:requeued?'resend_queued':'request_already_recorded'};
+}
 async function queueIfComplete(auth,batch,recipients,{now,dispatch,schedule}) {
   const files=must(await auth.admin.from('commercial_report_files').select('artifact_key,period,network,source,bytes,verified').eq('batch_id',batch.id));
   if(files.length!==batch.manifest.length)return {status:'uploaded',received:files.length,expected:batch.manifest.length};

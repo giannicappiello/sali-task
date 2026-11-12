@@ -4,7 +4,7 @@ import {createHash} from 'node:crypto';
 import {Buffer} from 'node:buffer';
 import {PDFDocument} from 'pdf-lib';
 import {AGENTS,POLICY_HASH,resolveRecipients,buildReportManifest,recipientsFingerprint} from './commercial-policy.js';
-import {reportArtifact,triggerMonthlyReports,dispatchCommercialReports} from './commercial-service.js';
+import {reportArtifact,triggerMonthlyReports,dispatchCommercialReports,authorizeReportResend} from './commercial-service.js';
 import {claimCommercialEmail} from './commercial-worker.js';
 
 function fixture() {
@@ -28,6 +28,7 @@ function fixture() {
     if(name==='commercial_report_queue'){db.queueCalls++;tables.commercial_report_emails=args.p_jobs;batch.status='queued';return {data:null};}
     if(name==='commercial_report_claim_email')return {data:tables.commercial_report_emails[0]||null};
     if(name==='commercial_report_finish_batch')return {data:false};
+    if(name==='commercial_report_authorize_resend'){db.resendArgs=args;return {data:db.requeueResult??true};}
     if(name==='commercial_report_store_pdf'){
       db.storedUpload=args;tables.commercial_report_files.push(args.p_file);
       tables.commercial_report_chunks=tables.commercial_report_chunks.filter(c=>c.batch_id!==args.p_batch||c.artifact_key!==args.p_artifact);
@@ -52,6 +53,18 @@ test('upload enforces an active owner delegation, unchanged recipients and manif
   f.db.tables.utenti[0].email='changed@example.test';
   await assert.rejects(()=>reportArtifact(f.auth,{...input,action:'chunk'}),/variati/);
   assert.equal(f.db.tables.commercial_report_chunks.length,0);
+});
+
+test('resend requires explicit duplicate acknowledgement, current recipients and owner delegation; dispatches only a new authorized attempt',async()=>{
+ const f=fixture(),input={batchId:'batch',emailId:'00000000-0000-4000-8000-000000000003',requestId:'00000000-0000-4000-8000-000000000004',claimedAt:'2026-11-12T07:01:00Z',reason:'Owner explicitly requested resend after checking receipt',acceptDuplicate:true};
+ let dispatches=0;const options={dispatch:async()=>{dispatches++;},schedule:promise=>promise};
+ await assert.rejects(()=>authorizeReportResend(f.auth,{...input,acceptDuplicate:false},options),/esplicitamente/);
+ assert.equal(f.db.resendArgs,undefined);
+ assert.equal((await authorizeReportResend(f.auth,input,options)).status,'resend_queued');assert.equal(dispatches,1);
+ f.db.requeueResult=false;
+ assert.equal((await authorizeReportResend(f.auth,input,options)).status,'request_already_recorded');assert.equal(dispatches,1);
+ f.db.tables.utenti[0].email='changed@example.test';
+ await assert.rejects(()=>authorizeReportResend(f.auth,input,options),/variati/);
 });
 
 test('complete 16-PDF batch queues manager-restricted envelopes atomically without immediate mail',async()=>{

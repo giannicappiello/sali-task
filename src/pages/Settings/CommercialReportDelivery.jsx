@@ -2,6 +2,7 @@ import {useEffect,useState} from 'react';
 import {Link} from 'react-router-dom';
 import {supabase} from '../../lib/supabaseClient';
 import CommercialReportUpload from './CommercialReportUpload';
+import CommercialReportResend from './CommercialReportResend';
 
 async function request(body,batchId) {
   const {data:{session}}=await supabase.auth.getSession();
@@ -33,6 +34,7 @@ export default function CommercialReportDelivery() {
       <p><strong>{plan.enabled?'Piano attivo':'Piano non attivo'}</strong></p>
       {plan.contactsError&&<p role="alert">{plan.contactsError}</p>}
       {plan.batches.filter(b=>b.status==='requested').map(batch=><CommercialReportUpload key={batch.id} batch={batch} request={request} onUploaded={load}/>)}
+      {plan.batches.filter(b=>['queued','sent'].includes(b.status)).map(batch=><CommercialReportResend key={batch.id} batch={batch} request={request} onUpdated={load}/>)}
       <section className="panel" style={{padding:20,marginBottom:20}}>
         <h2>Destinatari e contenuto</h2>
         <p>Oggetto: <strong>Report Commerciale mese di [mese anno]</strong>. Ogni agente riceve soltanto il proprio PDF.</p>

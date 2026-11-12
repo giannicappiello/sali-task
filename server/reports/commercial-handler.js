@@ -3,7 +3,7 @@ import { Buffer } from 'node:buffer';
 import { authorizeAIRequest } from '../ai/access.js';
 import { createProgremesReadonlyAdmin } from '../progremes-readonly-auth.js';
 import {AGENTS,POLICY_HASH,must,requireThat,sealToken} from './commercial-policy.js';
-import {reportSettings,reportPlan,reportArtifact,workerReady,triggerMonthlyReports,loadReportRecipients} from './commercial-service.js';
+import {reportSettings,reportPlan,reportArtifact,authorizeReportResend,workerReady,triggerMonthlyReports,loadReportRecipients} from './commercial-service.js';
 
 export async function handleCommercialReports(req,res,{authorize=authorizeAIRequest,admin=createProgremesReadonlyAdmin,workerCheck=workerReady}={}) {
   try {
@@ -25,6 +25,7 @@ export async function handleCommercialReports(req,res,{authorize=authorizeAIRequ
       const {batchId,artifactKey,period,network,source,base64,sha256,verified,expectedUploadHash,replaceIncomplete}=req.body;
       return res.json(await reportArtifact(auth,{action:'file',batchId,artifactKey,period,network,source,base64,sha256,verified,expectedUploadHash,replaceIncomplete}));
     }
+    if(req.method==='POST'&&req.body?.action==='resend')return res.json(await authorizeReportResend(auth,req.body));
     requireThat(req.method==='POST'&&req.body?.action==='configure','Richiesta non valida.');
     const old=await reportSettings(auth.admin);
     requireThat(!old||old.owner_id===auth.profile.id,'Il piano appartiene a un altro titolare.',403);

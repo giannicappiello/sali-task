@@ -115,11 +115,16 @@ export function buildRootMatrixRows(lines, magazzino, defaultAgentCode, kind) {
     sconto: (line) => mexalLineDiscount(line),
     id_mag_riga: (line) => number(line.id_mag_riga ?? magazzino),
     tp_um_articolo: (line) => normalizeMexalUnitType(line.tp_um_articolo),
-    cod_iva: (line) => line.iva_non_applicata ? "" : text(line.cod_iva) || text(line.codice_iva_mexal),
+    cod_iva: (line) => {
+      if (!line.iva_non_applicata) return text(line.cod_iva) || text(line.codice_iva_mexal);
+      const exemption = text(line.codice_esenzione_iva_mexal);
+      if (!exemption) throw new Error(`Codice esenzione IVA Mexal mancante per ${text(line.codice_articolo) || 'la riga ordine'}.`);
+      return exemption;
+    },
     tipo_stato_riga: () => mexalOrderLineStatus(kind),
   };
   const result = Object.fromEntries(Object.entries(fields).map(([field, value]) => [field,
-    lines.map((line, index) => [index + 1, value(line, index + 1)]).filter(([, item], index) => item !== undefined && (item !== "" || (field === "cod_iva" && lines[index]?.iva_non_applicata))),
+    lines.map((line, index) => [index + 1, value(line, index + 1)]).filter(([, item]) => item !== undefined && item !== ""),
   ]).filter(([, values]) => values.length));
 
   const commissionRows = lines.map((line, index) => [index + 1, number(line.provvigione_percentuale ?? line.perc_provv)]).filter(([, value]) => value !== undefined);

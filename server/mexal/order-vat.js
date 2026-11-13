@@ -4,12 +4,28 @@ import { applyOrderVatPolicy, isForeignOrderCustomer } from "../../src/modules/o
 
 const text = (value) => String(value ?? "").trim();
 
+// Mexal's customer-specific fiscal treatment is synchronized verbatim.
+// A foreign order needs that exemption code, rather than a blank VAT matrix cell.
+export function customerMexalVatExemption(customer) {
+  let value = customer?.dati_mexal?.assog_iva ?? customer?.assog_iva;
+  while (Array.isArray(value)) value = value.at(-1);
+  const code = typeof value === 'string' || typeof value === 'number' ? text(value).toUpperCase() : '';
+  if (!/^[A-Z0-9]+(?:[,.][0-9]+)?$/.test(code) || code.length > 20) return null;
+  // Never replace an absent exemption with an ordinary positive article rate.
+  if (/^[0-9]+(?:[,.][0-9]+)?$/.test(code) && Number(code.replace(',', '.')) > 0) return null;
+  return code;
+}
+
 // Validate every pending document before the first POST. Missing snapshots are
 // repaired from the authoritative article, never by assuming a default VAT.
 export async function prepareOrderVat(documents, mexal, { loadArticle = loadFullArticle, customer } = {}) {
   if (isForeignOrderCustomer(customer)) {
+    const exemption = customerMexalVatExemption(customer);
+    if (!exemption && Object.values(documents).some(lines => lines.length)) {
+      throw new Error(`Codice di esenzione IVA non configurato nell’anagrafica Mexal del cliente ${text(customer?.codice_cliente) || 'estero'}. Verificare il campo assog_iva e sincronizzare i clienti. Nessun nuovo documento inviato.`);
+    }
     return { documents: Object.fromEntries(Object.entries(documents).map(([kind, lines]) =>
-      [kind, lines.map((line) => applyOrderVatPolicy(line, customer))])), updates: [] };
+      [kind, lines.map((line) => ({ ...applyOrderVatPolicy(line, customer), codice_esenzione_iva_mexal: exemption }))])), updates: [] };
   }
   const repairs = new Map();
   const missing = new Map();

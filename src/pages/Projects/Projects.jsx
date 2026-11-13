@@ -2,6 +2,7 @@ import { createSaveOutcome } from "../../save-outcomes.js";
 import { loadWorkspaceProducts } from '../../lib/workspaceCrmCatalog';
 import { isCustomerRecordScope } from '../../lib/customerRecordAccess.js';
 import { formatDisplayDate } from '../../lib/displayLocale.js';
+import { isClosedTask as isDone, matchesProjectStatus } from "../../lib/projectArchive.js";
 import { isPhaseParticipant } from "../../lib/projectVisibility";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
@@ -56,16 +57,6 @@ const quickProductEmpty = {
   categoria: "",
 };
 
-const closedStates = ["evaso", "evasa", "completato", "completata", "chiuso", "chiusa"];
-
-function normalize(value) {
-  return String(value || "").trim().toLowerCase().replaceAll(" ", "_");
-}
-
-function isDone(item) {
-  return closedStates.includes(normalize(item?.stato)) || Boolean(item?.completato_at);
-}
-
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -91,7 +82,7 @@ function getBlockingPhase(item, list) {
 }
 
 export default function Projects() {
-  const [routeParams] = useSearchParams();
+  const [routeParams, setRouteParams] = useSearchParams();
   const requestedProjectId = routeParams.get("project") || "";
   const requestedReturnTo = routeParams.get("returnTo") || "";
   const requestedNewProject = routeParams.get("new") === "1";
@@ -138,8 +129,8 @@ export default function Projects() {
   const [phaseDepartments, setPhaseDepartments] = useState([]);
   const [customerDirectory, setCustomerDirectory] = useState(() => new Map());
 
-  const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("aperti");
+  const query = routeParams.get("search") || "";
+  const statusFilter = routeParams.get("status") || (requestedProjectId ? "tutti" : "aperti");
   const [projectView, setProjectView] = useState("list");
   const [selectedProject, setSelectedProject] = useState(null);
   const [selectedPhase, setSelectedPhase] = useState(null);
@@ -179,6 +170,15 @@ export default function Projects() {
 
     return () => observer.disconnect();
   }, [projects, phases, query, statusFilter]);
+
+  function updateProjectFilter(name, value) {
+    setRouteParams(current => {
+      const next = new URLSearchParams(current);
+      if (value) next.set(name, value); else next.delete(name);
+      if (name === "status") next.delete("project");
+      return next;
+    }, { replace: true });
+  }
 
   function syncProjectBoardScroll(source, target) {
     if (scrollSyncLockRef.current || !source || !target) return;
@@ -409,15 +409,7 @@ export default function Projects() {
     return projects.filter((project) => {
       if (requestedProjectId && project.id !== requestedProjectId) return false;
       const projectPhases = phasesByProject.get(project.id) || [];
-      const hasOpen = projectPhases.some((phase) => !isDone(phase));
-      const hasOverdue = projectPhases.some((phase) => statusClass(phase) === "danger");
-      const hasToday = projectPhases.some((phase) => statusClass(phase) === "today");
-      const allDone = projectPhases.length > 0 && projectPhases.every(isDone);
-
-      if (statusFilter === "aperti" && !hasOpen) return false;
-      if (statusFilter === "oggi" && !hasToday) return false;
-      if (statusFilter === "scaduti" && !hasOverdue) return false;
-      if (statusFilter === "completati" && !allDone) return false;
+      if (!matchesProjectStatus(project, projectPhases, statusFilter, todayIso())) return false;
 
       if (!text) return true;
       const productNames = (productsByProject.get(project.id) || []).join(" ");
@@ -1349,7 +1341,7 @@ export default function Projects() {
     <div className="projects-page v4-page projects-v4-final">
       <div className="page-title-row">
         <div>
-          {safeReturnTo ? <Link className="planning-return-link" to={safeReturnTo}>← Torna all’opportunità CRM</Link> : null}
+          {safeReturnTo ? <Link className="planning-return-link" to={safeReturnTo}>{safeReturnTo.startsWith("/activities/archive") ? "← Torna all’archivio" : "← Torna all’opportunità CRM"}</Link> : null}
           <h1>Progetti</h1>
           <p>Tutti i progetti del mio reparto.</p>
         </div>
@@ -1358,15 +1350,17 @@ export default function Projects() {
       <div className="v4-toolbar projects-toolbar-final">
         <div className="task-search">
           <Search size={18} />
-          <input placeholder="Cerca progetto, cliente, prodotto, fase o reparto..." value={query} onChange={(e) => setQuery(e.target.value)} />
+          <input placeholder="Cerca progetto, cliente, prodotto, fase o reparto..." value={query} onChange={(e) => updateProjectFilter("search", e.target.value)} />
         </div>
         <div className="status-tabs">
           {[
             ["aperti", "Aperti"],
             ["oggi", "In scadenza oggi"],
             ["scaduti", "Scaduti"],
+            ["completati", "Archiviati"],
+            ["tutti", "Tutti"],
           ].map(([value, label]) => (
-            <button key={value} className={statusFilter === value ? "active" : ""} onClick={() => setStatusFilter(value)}>
+            <button key={value} className={statusFilter === value ? "active" : ""} onClick={() => updateProjectFilter("status", value)}>
               {label}
             </button>
           ))}

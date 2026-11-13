@@ -6,14 +6,10 @@ import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../contexts/AuthContext";
 import { VIRTUAL_DIRECT_CUSTOMER_KEY } from "../../modules/crm/crmConfig";
 
-const CLOSED_STATES = new Set(["evaso", "evasa", "completato", "completata", "chiuso", "chiusa", "annullato", "annullata"]);
+import { CLOSED_ACTIVITY_STATES as CLOSED_STATES, isClosedTask as isTaskClosed, isArchivedProject, archivedProjectHref } from "../../lib/projectArchive.js";
 
 function normalize(value) {
   return String(value || "").trim().toLowerCase().replaceAll(" ", "_");
-}
-
-function isTaskClosed(item) {
-  return Boolean(item?.completato_at) || CLOSED_STATES.has(normalize(item?.stato));
 }
 
 function isReminderClosed(item) {
@@ -148,7 +144,7 @@ export default function ActivityArchive() {
       });
       const projectRows = visibleProjects.flatMap((project) => {
         const projectTasks = phasesByProject.get(project.id) || [];
-        const closed = CLOSED_STATES.has(normalize(project.stato)) || (projectTasks.length > 0 && projectTasks.every(isTaskClosed));
+        const closed = isArchivedProject(project, projectTasks);
         if (!closed) return [];
         const customerKey = project.crm_customer_key || "";
         return [{
@@ -221,6 +217,6 @@ export default function ActivityArchive() {
     </div>
     <div className="v4-toolbar activity-archive-toolbar"><label className="task-search"><Search size={18} /><input value={query} onChange={(event) => updateParam("search", event.target.value)} placeholder="Ricerca rapida totale nell’archivio" /></label><select value={type} onChange={(event) => updateParam("type", event.target.value, "all")} aria-label="Tipo di elemento archiviato"><option value="all">Tutti i tipi</option><option value="tasks">Attività e task</option><option value="projects">Progetti</option><option value="reminders">Reminder</option></select></div>
     {error ? <div className="activity-archive-error" role="alert">{error}</div> : null}
-    {loading ? <div className="panel activities-empty">Caricamento archivio...</div> : <div className="panel activity-archive-list"><div className="activity-archive-list-header"><strong>{visibleRows.length} elementi</strong><span>Ordinati dalla chiusura più recente</span></div>{visibleRows.length ? visibleRows.map((row) => <article key={`${row.type}-${row.id}`} className="activity-archive-row"><span className="activity-archive-icon"><CheckCircle2 size={18} /></span><div className="activity-archive-main"><span>{row.typeLabel}</span><strong>{row.title || "Senza titolo"}</strong><small>{row.description || row.parent}</small></div><dl><div><dt>Cliente</dt><dd>{row.customer}</dd></div><div><dt>Progetto / contesto</dt><dd>{row.parent}</dd></div><div><dt>Responsabile / reparto</dt><dd>{row.owner}{row.departments !== "—" ? ` · ${row.departments}` : ""}</dd></div><div><dt>Chiusura</dt><dd>{formatDate(row.closedAt)}</dd></div></dl><Link className="secondary-action" to={row.href}>Apri storico</Link></article>) : <div className="activities-empty">Nessun elemento chiuso corrisponde ai filtri.</div>}</div>}
+    {loading ? <div className="panel activities-empty">Caricamento archivio...</div> : <div className="panel activity-archive-list"><div className="activity-archive-list-header"><strong>{visibleRows.length} elementi</strong><span>Ordinati dalla chiusura più recente</span></div>{visibleRows.length ? visibleRows.map((row) => <article key={`${row.type}-${row.id}`} className="activity-archive-row"><span className="activity-archive-icon"><CheckCircle2 size={18} /></span><div className="activity-archive-main"><span>{row.typeLabel}</span><strong>{row.title || "Senza titolo"}</strong><small>{row.description || row.parent}</small></div><dl><div><dt>Cliente</dt><dd>{row.customer}</dd></div><div><dt>Progetto / contesto</dt><dd>{row.parent}</dd></div><div><dt>Responsabile / reparto</dt><dd>{row.owner}{row.departments !== "—" ? ` · ${row.departments}` : ""}</dd></div><div><dt>Chiusura</dt><dd>{formatDate(row.closedAt)}</dd></div></dl><Link className="secondary-action" to={row.type === "projects" ? archivedProjectHref(row.id, params.toString()) : row.href}>{row.type === "projects" ? "Apri progetto e task" : "Apri storico"}</Link></article>) : <div className="activities-empty">Nessun elemento chiuso corrisponde ai filtri.</div>}</div>}
   </div>;
 }

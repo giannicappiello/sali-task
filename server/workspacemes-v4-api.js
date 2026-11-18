@@ -97,14 +97,27 @@ function buildPreviewIdentity({ requestId, octHash, demands }) {
 }
 
 export async function refreshWorkspaceV4Demand(admin, original, demandReader = buildProductionDemand) {
-  const current = await demandReader({ admin, lineIds: original.items.map(item => item.lineId),
-    conversions: original.items.map(item => item.conversion).filter(Boolean) });
-  const previous = new Map(original.items.map(item => [item.lineId, item]));
-  if (current.items.length !== previous.size || current.items.some(item =>
+  // Historical snapshots and links remain immutable. Only sources with a matching,
+  // completed MES receipt may be omitted from the next commercial preview.
+  const sourceItems = [...original.items, ...(original.excludedCommercialItems || [])];
+  const sourceOrders = [...original.orders, ...(original.excludedCommercialOrders || [])];
+  const orderIds = [...new Set(sourceItems.map(item => item.orderId))];
+  const excluded = ensure(await admin.rpc("workspace_reconciled_oct_sources", { p_order_ids: orderIds }));
+  const excludedIds = new Set(excluded.map(row => row.order_id));
+  if (excluded.some(row => !orderIds.includes(row.order_id)))
+    throw fail("Ricevuta di riconciliazione estranea alla RdP.", "V5_REVISION_SCOPE_CHANGED");
+  const selected = sourceItems.filter(item => !excludedIds.has(item.orderId));
+  if (!selected.length) throw fail("Nessun ordine commerciale valido residuo nella RdP.", "V5_NO_VALID_COMMERCIAL_SOURCE");
+  const current = await demandReader({ admin, lineIds: selected.map(item => item.lineId),
+    conversions: selected.map(item => item.conversion).filter(Boolean) });
+  const previous = new Map(selected.map(item => [item.lineId, item]));
+  if (current.items.length !== previous.size || new Set(current.items.map(item => item.lineId)).size !== previous.size || current.items.some(item =>
     !previous.has(item.lineId) || upper(item.commercialArticleCode) !== upper(previous.get(item.lineId).commercialArticleCode) ||
     clean(item.orderId) !== clean(previous.get(item.lineId).orderId)))
     throw fail("Le righe OCT sono cambiate: scegliere quali lavorazioni mantenere prima di aggiornare la RdP.", "V5_REVISION_SCOPE_CHANGED");
-  return current;
+  return { ...current, excludedCommercialItems: sourceItems.filter(item => excludedIds.has(item.orderId)),
+    excludedCommercialOrders: sourceOrders.filter(order => excludedIds.has(order.orderId)),
+    commercialReconciliation: excluded };
 }
 
 export async function createWorkspaceV4Preview({ admin, requestId, requestedBy, client = createProgremesProductionClient(), demandReader = buildProductionDemand }) {
@@ -189,6 +202,8 @@ export async function confirmWorkspaceV4({ admin, previewId, reason, requestedBy
     if (preview.snapshot.commercialDemand.items.some(item => cancelled.has(forecastLineKey(preview.production_request_id, item.lineId))))
       throw fail("La preview contiene righe annullate: ricalcolare la RdP.", "V4_CANCELLED_LINE_PREVIEW");
     const current = await refreshWorkspaceV4Demand(admin, preview.snapshot.commercialDemand, demandReader);
+    if (payloadHash(current.commercialReconciliation || []) !== payloadHash(preview.snapshot.commercialDemand.commercialReconciliation || []))
+      throw fail("La riconciliazione OCT è cambiata: ricalcolare l’anteprima prima di confermare.", "STALE_V4_PREVIEW");
     if (aggregateWorkspaceHashes(current.orders.map(order => order.versionHash)) !== preview.oct_hash)
       throw fail("Lâ€™OCT Ã¨ cambiato dopo lâ€™anteprima: premi Aggiorna RdP e conferma i nuovi dati.", "STALE_V4_PREVIEW");
   }

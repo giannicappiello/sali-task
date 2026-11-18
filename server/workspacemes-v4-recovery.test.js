@@ -21,6 +21,7 @@ function fixture() {
       }; return query;
     },
     async rpc(name, args) {
+      if (name === "workspace_reconciled_oct_sources") return { data: [] };
       if (name === "workspace_rdp_has_deleted_oct") return { data: false };
       const row = { status: "FORECAST", mes_response: args.p_mes_response, preview_id: 1 };
       tables.workspace_v4_confirmation_mirrors.push(row); tables.workspace_v4_previews[0].status = "CONFIRMED";

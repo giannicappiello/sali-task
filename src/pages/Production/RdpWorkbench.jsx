@@ -182,6 +182,7 @@ function V3Panel({ readOnly = false, v3, canDecide, busy, onPreview, onConfirm, 
     {!readOnly && <button type="button" className="primary-action rdp-v3-recalculate" onClick={onPreview} disabled={busy || recovering || !v3.flags?.["workspacemes.v4.preview"]}>{preview?.snapshot?.capacityOnly ? "AGGIORNA RDP" : "RICALCOLA RDP"}</button>}
     {preview && <>
       <p>Verifica RdP <strong>{preview.status}</strong> · {preview.snapshot?.capacityOnly ? "articolo, quantità, unità di misura e consegna. Formule, fabbisogni e giacenze si verificano nella pianificazione." : "esito ricevuto da MES; i dettagli verificati sono riportati qui sotto."}</p>
+      {!!preview.snapshot?.commercialDemand?.excludedCommercialOrders?.length && <p role="status">Ordini cancellati esclusi dalla nuova anteprima dopo riconciliazione MES: {preview.snapshot.commercialDemand.excludedCommercialOrders.map(order => [order.sigla, order.serie, order.numero].join("/")).join(", ")}. Gli altri ordini restano inclusi. Questo ricalcolo non modifica lavorazioni o documenti esistenti.</p>}
       <div className="rdp-analysis-grid">{(v3.components || []).map((row) => <div key={row.id}>
         <span>{row.source} · PROGREMES</span>
         <strong>{preview.snapshot?.capacityOnly ? row.article_code : `${row.article_code} · ${formatQuantity(row.gross_requirement)} ${row.unit_of_measure}`}</strong>

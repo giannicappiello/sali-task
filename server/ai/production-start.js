@@ -4,6 +4,7 @@ import { jsonSchema } from 'ai';
 import { createProgremesProductionClient } from '../progremes-production-client.js';
 import { productionSheetSession } from '../production-sheet-access.js';
 import { requireCentralPrint } from '../operational-print.js';
+import { productionSheetMaterialRows } from './production-sheet-diagnostics.js';
 export const productionStartSchema = {type:'object',additionalProperties:false,required:['targetId','kind','phaseId','expectedHash'],properties:{
  targetId:{type:'integer',minimum:1,maximum:2147483647},kind:{type:'string',enum:['production','packaging']},
  phaseId:{type:'string',format:'uuid'},expectedHash:{type:'string',pattern:'^[a-f0-9]{64}$'},allowShortage:{type:'boolean'}}};
@@ -25,7 +26,8 @@ export async function productionStartPreview(auth,input,{client=createProgremesP
  if(!/^[a-f0-9]{64}$/i.test(sheet.contentHash || '')) throw fail('Foglio produzione privo di una versione verificabile.');
  if(input.expectedHash && sheet.contentHash!==input.expectedHash) throw fail('Il foglio è cambiato: aggiornare la verifica prima dell’avvio.');
  return {targetId:input.targetId,kind:input.kind,phaseId:phase.id,expectedHash:sheet.contentHash,batch:phase.number,
-  resource:phase.resource,lot:phase.lotCode,quantity:phase.quantity,unit:phase.unit,messages:sheet.messages || [],printBeforeStart:true};
+  resource:phase.resource,lot:phase.lotCode,quantity:phase.quantity,unit:phase.unit,messages:sheet.messages || [],
+  materialRows:input.kind==='production'?productionSheetMaterialRows(sheet.sheetHtml):[],printBeforeStart:true};
 }
 async function complete(auth,pending,result,error=null) {
  const saved=await auth.admin.rpc('complete_workspace_external_ai_action',{p_proposal_id:pending.id,p_succeeded:result.applied===true,p_result:result,p_error:error});

@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 const {PGlite}=await import(process.env.PGLITE_MODULE || '@electric-sql/pglite');
-const migration=await readFile('supabase/migrations/20261119162618_rdp_append_confirmed_commercial_lines.sql','utf8');
+const migration=await readFile('supabase/migrations/20261119164028_rdp_append_confirmed_commercial_lines.sql','utf8');
 test('confirmed additions are atomic, preserve original links and never change OP/documents',async()=>{
   const db=new PGlite();
   await db.exec(`create role anon;create role authenticated;

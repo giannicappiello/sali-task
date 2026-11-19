@@ -61,7 +61,7 @@ test('ricalcolo completo invia solo OC497 e persiste evidenza senza cambiare sto
   const item={...original.items[0],lineId:'valid',orderId:'497'};
   const demand={items:[original.items[0],item],orders:[original.orders[0],{orderId:'497',versionHash:'hash497',sigla:'OC',serie:2,numero:497}]};
   const tables={workspace_production_requests:[{id:'request',external_id:'external',contract_version:4,demand_snapshot_id:'snapshot',workspace_status:'BLOCKED'}],
-    workspace_production_demand_snapshots:[{snapshot:demand,captured_at:'2026-11-18'}],workspace_rdp_cancellations:[],workspace_v4_previews:[],workspace_production_request_audit:[]};
+    workspace_production_demand_snapshots:[{snapshot:demand,captured_at:'2026-11-18'}],ordini_righe:[],workspace_rdp_cancellations:[],workspace_v4_previews:[],workspace_production_request_audit:[]};
   const frozen=structuredClone(tables);let persisted,command;
   const admin={from(name){assert.ok(tables[name],`Unexpected table ${name}`);return {select(){return this;},eq(){return this;},neq(){return this;},in(){return this;},order(){return this;},limit(){return this;},then(resolve){return Promise.resolve({data:structuredClone(tables[name])}).then(resolve);}};},
     async rpc(name,args){

@@ -6,7 +6,7 @@ function fixture() {
   const tables = {
     workspace_v4_previews: [{ id: 1, production_request_id: 2, status: "READY", preview_hash: "hash", external_id: "preview", local_row_version: 1, snapshot: { demands: [{ workspaceLineId: "line" }] } }],
     workspace_production_requests: [{ id: 2, external_id: "request", rdp_number: 167, workspace_status: "READY" }],
-    workspace_production_request_audit: [], workspace_v4_preview_materials: [], workspace_rdp_cancellations: [], workspace_v4_confirmation_mirrors: [],
+    workspace_production_request_audit: [], ordini_righe: [], workspace_production_request_items: [], workspace_v4_preview_materials: [], workspace_rdp_cancellations: [], workspace_v4_confirmation_mirrors: [],
   };
   const admin = {
     from(name) {

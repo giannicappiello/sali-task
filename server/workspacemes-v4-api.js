@@ -44,6 +44,18 @@ export function automaticWorkspaceV4Decision(preview, materials = []) {
 export function validateWorkspaceV4ProductionResult(preview, result) {
   const expectedDemands = Array.isArray(preview?.snapshot?.demands) ? preview.snapshot.demands : [];
   const productionOrders = Array.isArray(result?.productionOrders) ? result.productionOrders : [];
+  if (result?.status === "EXTENDED") {
+    const preserved = result.preservedProductionLines || [];
+    const forecast = result.forecastLines || [];
+    const all = [...preserved, ...forecast];
+    const expected = expectedDemands.map(row => row.workspaceLineId);
+    if (result.productionCreated !== true || !preserved.length || !forecast.length ||
+        all.length !== expected.length || new Set(all).size !== all.length || expected.some(id => !all.includes(id)) ||
+        productionOrders.length !== preserved.length || new Set(productionOrders.map(row => row.id)).size !== productionOrders.length ||
+        productionOrders.some(row => !Number.isSafeInteger(row.id) || row.id <= 0 || !clean(row.number)))
+      throw fail("MES non ha riconciliato tutte le righe aggiunte e gli OP conservati.", "V5_EXTENSION_INCOMPLETE");
+    return productionOrders;
+  }
   if (result?.status === "FORECAST" && result.productionCreated === false && productionOrders.length === 0) {
     const actual = Array.isArray(result.forecastLines) ? result.forecastLines : [];
     const expected = expectedDemands.map(x => x.workspaceLineId);
@@ -96,7 +108,7 @@ function buildPreviewIdentity({ requestId, octHash, demands }) {
     correlationId: deterministicUuid({ purpose: "v4-correlation", idempotencyKey }) };
 }
 
-export async function refreshWorkspaceV4Demand(admin, original, demandReader = buildProductionDemand) {
+export async function refreshWorkspaceV4Demand(admin, original, demandReader = buildProductionDemand, requestId = null) {
   // Historical snapshots and links remain immutable. Only sources with a matching,
   // completed MES receipt may be omitted from the next commercial preview.
   const sourceItems = [...original.items, ...(original.excludedCommercialItems || [])];
@@ -108,16 +120,34 @@ export async function refreshWorkspaceV4Demand(admin, original, demandReader = b
     throw fail("Ricevuta di riconciliazione estranea alla RdP.", "V5_REVISION_SCOPE_CHANGED");
   const selected = sourceItems.filter(item => !excludedIds.has(item.orderId));
   if (!selected.length) throw fail("Nessun ordine commerciale valido residuo nella RdP.", "V5_NO_VALID_COMMERCIAL_SOURCE");
-  const current = await demandReader({ admin, lineIds: selected.map(item => item.lineId),
+  const additions = requestId ? await appendedCommercialLines(admin, requestId, selected) : [];
+  const current = await demandReader({ admin, lineIds: [...selected.map(item => item.lineId), ...additions.map(item => item.id)],
     conversions: selected.map(item => item.conversion).filter(Boolean) });
-  const previous = new Map(selected.map(item => [item.lineId, item]));
-  if (current.items.length !== previous.size || new Set(current.items.map(item => item.lineId)).size !== previous.size || current.items.some(item =>
-    !previous.has(item.lineId) || upper(item.commercialArticleCode) !== upper(previous.get(item.lineId).commercialArticleCode) ||
-    clean(item.orderId) !== clean(previous.get(item.lineId).orderId)))
+  const expected = new Map([...selected.map(item => [item.lineId, item]), ...additions.map(item =>
+    [item.id, { orderId: item.ordine_id, commercialArticleCode: item.codice_articolo }])]);
+  if (current.items.length !== expected.size || new Set(current.items.map(item => item.lineId)).size !== expected.size || current.items.some(item =>
+    !expected.has(item.lineId) || upper(item.commercialArticleCode) !== upper(expected.get(item.lineId).commercialArticleCode) ||
+    clean(item.orderId) !== clean(expected.get(item.lineId).orderId)))
     throw fail("Le righe OCT sono cambiate: scegliere quali lavorazioni mantenere prima di aggiornare la RdP.", "V5_REVISION_SCOPE_CHANGED");
   return { ...current, excludedCommercialItems: sourceItems.filter(item => excludedIds.has(item.orderId)),
     excludedCommercialOrders: sourceOrders.filter(order => excludedIds.has(order.orderId)),
     commercialReconciliation: excluded };
+}
+
+async function appendedCommercialLines(admin, requestId, selected) {
+  const oldIds = new Set(selected.map(item => item.lineId));
+  const cancelled = await cancelledForecastLineKeys(admin, [requestId]);
+  const rows = ensure(await admin.from("ordini_righe").select("id,ordine_id,codice_articolo,quantita,mexal_attiva,riga_descrittiva")
+    .in("ordine_id", [...new Set(selected.map(item => item.orderId))]));
+  const added = rows.filter(row => !oldIds.has(row.id) && row.mexal_attiva !== false && !row.riga_descrittiva &&
+    clean(row.codice_articolo) && positive(row.quantita) && !cancelled.has(forecastLineKey(requestId, row.id)));
+  if (!added.length) return [];
+  const links = ensure(await admin.from("workspace_production_request_items")
+    .select("ordine_riga_id,production_request_id,request:workspace_production_requests(workspace_status,stato)")
+    .in("ordine_riga_id", added.map(row => row.id)).neq("production_request_id", requestId));
+  if (links.some(link => upper(link.request?.workspace_status || link.request?.stato) !== "CANCELLED"))
+    throw fail("Una nuova riga OCT appartiene già a un’altra RdP: riconciliare il collegamento senza duplicare lavorazioni.", "V5_ADDED_LINE_ALREADY_LINKED");
+  return added.sort((a, b) => clean(a.id).localeCompare(clean(b.id)));
 }
 
 export async function createWorkspaceV4Preview({ admin, requestId, requestedBy, client = createProgremesProductionClient(), demandReader = buildProductionDemand }) {
@@ -128,7 +158,8 @@ export async function createWorkspaceV4Preview({ admin, requestId, requestedBy, 
     .eq("production_request_id", requestId).order("captured_at", { ascending: false }).limit(1))[0];
   if (latest?.status === "READY" && latest.snapshot?.confirmationRecovery && !latest.snapshot.confirmationRecovery.rejected)
     throw fail("Recuperare la conferma in corso prima di ricalcolare la RdP.", "V4_CONFIRM_PENDING");
-  input.demand = await refreshWorkspaceV4Demand(admin, input.demand, demandReader);
+  const previousLines = new Set(input.demand.items.map(item => item.lineId));
+  input.demand = await refreshWorkspaceV4Demand(admin, input.demand, demandReader, requestId);
   const orders = new Map(input.demand.orders.map((order) => [clean(order.orderId), order]));
   const demands = input.demand.items.map((item) => {
     const order = orders.get(clean(item.orderId));
@@ -148,6 +179,9 @@ export async function createWorkspaceV4Preview({ admin, requestId, requestedBy, 
     workspaceRdpExternalId: input.request.external_id, idempotencyKey: identity.idempotencyKey,
     expectedOctHash: octHash, correlationId: identity.correlationId, causationId: input.request.external_id, demands };
   const sent = await client.previewV4(command);
+  if (upper(input.request.workspace_status || input.request.stato) === "CONFIRMED" &&
+      input.demand.items.some(item => !previousLines.has(item.lineId)) && sent.result.appendsCommercialLines !== true)
+    throw fail("Aggiornare MES per aggiungere nuove righe alla RdP conservando gli OP esistenti. Nessuna lavorazione modificata.", "V5_APPEND_REQUIRES_MES_UPDATE");
   const materials = sent.result.demands.flatMap((demand) => demand.materials.map((material) => ({
     workspace_line_id: demand.workspaceLineId, finished_article_code: demand.finishedArticleCode,
     source: material.source, article_code: material.articleCode, description: material.description,
@@ -201,9 +235,9 @@ export async function confirmWorkspaceV4({ admin, previewId, reason, requestedBy
     const cancelled = await cancelledForecastLineKeys(admin, [preview.production_request_id]);
     if (preview.snapshot.commercialDemand.items.some(item => cancelled.has(forecastLineKey(preview.production_request_id, item.lineId))))
       throw fail("La preview contiene righe annullate: ricalcolare la RdP.", "V4_CANCELLED_LINE_PREVIEW");
-    const current = await refreshWorkspaceV4Demand(admin, preview.snapshot.commercialDemand, demandReader);
+    const current = await refreshWorkspaceV4Demand(admin, preview.snapshot.commercialDemand, demandReader, preview.production_request_id);
     if (payloadHash(current.commercialReconciliation || []) !== payloadHash(preview.snapshot.commercialDemand.commercialReconciliation || []))
-      throw fail("La riconciliazione OCT � cambiata: ricalcolare l�anteprima prima di confermare.", "STALE_V4_PREVIEW");
+      throw fail("La riconciliazione OCT è cambiata: ricalcolare l’anteprima prima di confermare.", "STALE_V4_PREVIEW");
     if (aggregateWorkspaceHashes(current.orders.map(order => order.versionHash)) !== preview.oct_hash)
       throw fail("L’OCT è cambiato dopo l’anteprima: premi Aggiorna RdP e conferma i nuovi dati.", "STALE_V4_PREVIEW");
   }
@@ -235,7 +269,7 @@ export async function confirmWorkspaceV4({ admin, previewId, reason, requestedBy
       if (original.confirmationExternalId !== command.externalId || !equivalentPreview ||
           original.idempotencyKey !== command.idempotencyKey || original.expectedPreviewHash !== command.expectedPreviewHash ||
           original.decision !== command.decision || !clean(original.decidedBy) || !clean(original.reason) ||
-          original.result?.externalId !== command.externalId || !["FORECAST", "UPDATED"].includes(original.result?.status))
+          original.result?.externalId !== command.externalId || !["FORECAST", "UPDATED", "EXTENDED"].includes(original.result?.status))
         throw fail("L'esito recuperato non corrisponde alla conferma richiesta.", "V4_RECOVERY_IDENTITY_MISMATCH");
       command = { ...command, previewExternalId: original.previewExternalId, reason: original.reason, decidedBy: original.decidedBy,
         correlationId: original.correlationId, causationId: original.causationId };

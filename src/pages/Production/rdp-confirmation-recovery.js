@@ -4,6 +4,9 @@ export function uncertainConfirmation(error) {
 }
 
 export function requiresConfirmationRecovery(preview, code) {
+  // The recovery receipt remains in the snapshot for audit after confirmation.
+  // A completed preview must allow a new commercial revision.
+  if (String(preview?.status || "").toUpperCase() === "CONFIRMED") return false;
   // A definitive rejection permits correction/recalculation even if the detail
   // still contains the pending marker captured before that response arrived.
   if (code) return uncertainConfirmation({ code });

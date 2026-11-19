@@ -60,3 +60,14 @@ test("un rifiuto definitivo permette la correzione anche se il dettaglio aveva u
   assert.equal(requiresConfirmationRecovery(preview), true);
   assert.equal(requiresConfirmationRecovery({ snapshot: { confirmationRecovery: { rejected: true } } }), false);
 });
+
+test("la ricevuta di una conferma conclusa non blocca Aggiorna RdP", () => {
+  const preview = { status: "CONFIRMED", snapshot: { capacityOnly: true, confirmationRecovery: {
+    command: { idempotencyKey: "preserved" }, response: { status: "CONFIRMED" }
+  } } };
+  const before = JSON.stringify(preview);
+  assert.equal(requiresConfirmationRecovery(preview), false);
+  assert.equal(requiresConfirmationRecovery(preview, "V4_CONFIRM_PENDING"), false);
+  assert.equal(JSON.stringify(preview), before);
+  assert.equal(requiresConfirmationRecovery({ ...preview, status: "READY" }), true);
+});

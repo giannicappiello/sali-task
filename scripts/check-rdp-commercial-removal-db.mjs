@@ -11,7 +11,7 @@ create table workspace_production_request_items(production_request_id uuid,ordin
 create table workspace_production_demand_snapshots(id bigserial primary key,production_request_id uuid,snapshot_hash text,demand_hash text,contract_version int,order_count int,item_count int,snapshot jsonb,unique(production_request_id,snapshot_hash));
 create table proof(order_id uuid);
 create function workspace_reconciled_oct_sources(uuid[]) returns table(order_id uuid) language sql as $$select order_id from proof where order_id=any($1)$$;`);
-const sql=await readFile(new URL('../supabase/migrations/20261123104138_rdp_reconcile_removed_commercial_lines.sql',import.meta.url),'utf8');
+const sql=await readFile(new URL('../supabase/migrations/20261123105751_rdp_reconcile_removed_commercial_lines.sql',import.meta.url),'utf8');
 await db.exec(sql);
 await db.exec('create trigger apply_receipt after insert on workspace_v4_confirmation_mirrors for each row execute function link_confirmed_rdp_appended_lines()');
 const uid=n=>`00000000-0000-0000-0000-${String(n).padStart(12,'0')}`;

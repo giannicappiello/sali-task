@@ -16,3 +16,8 @@
  .hr-page .hr-monthly-table .hr-monthly-name { width: 140px; min-width: 140px; max-width: 140px; }
  .hr-page .hr-monthly-table .hr-monthly-total { width: 75px; min-width: 75px; max-width: 75px; }
 }
+.hr-page .hr-monthly-table td.absence-event,
+.hr-page .hr-monthly-table td.absence-event button.anomaly { background: #ffe1e1; color: #b42318; }
+.hr-page .hr-monthly-table td.overtime-event { background: #d9f2ff; }
+.hr-page .hr-monthly-day .hr-code-absence { background: #ffe1e1; color: #b42318; border-radius: 4px; padding: 3px 2px; }
+.hr-page .hr-monthly-day .hr-code-overtime { background: #d9f2ff; color: #006a99; border-radius: 4px; padding: 3px 2px; }

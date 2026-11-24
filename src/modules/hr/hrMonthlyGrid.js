@@ -3,6 +3,7 @@ import { monthDays, romeDay, romeInstant, timeInput } from './hrTime.js';
 
 export const CALENDAR_EVENT_LABELS = { overtime: 'Straordinario', permission: 'Permesso', leave: 'Ferie', illness: 'Malattia', pregnancy: 'Maternità' };
 export const requestVersion = row => Object.fromEntries(['kind', 'starts_at', 'ends_at', 'note', 'status'].map(key => [key, row[key] ?? null]));
+export const attendanceCodeClass = code => /^STR /.test(code) ? 'hr-code-overtime' : /^(?:F|P(?:\d|$)|M|A$)/.test(code) ? 'hr-code-absence' : '';
 const hoursLabel = hours => hours.toLocaleString('it-IT', { maximumFractionDigits: 2 });
 function dailyRequestHours(requests, day, kind, status) {
   const start = Date.parse(romeInstant(`${day}T00:00`));

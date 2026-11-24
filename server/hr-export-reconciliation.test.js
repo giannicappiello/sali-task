@@ -71,3 +71,16 @@ test('calendar headers, pane split and exact day counts survive February and lea
     assert.equal(sheet[XLSX.utils.encode_cell({r:4,c:8+count})].v,`${count}-${month.slice(5)}-${month.slice(0,4)}`);
   }
 });
+
+test('Excel absence cells are red and overtime cells blue, including mixed-day rich text',async()=>{
+  const data=reconciliationFixture();
+  const book=await createMonthlyAttendanceWorkbook(data,'2026-11',now),sheet=book.Sheets['Presenze mensili'];
+  assert.equal(sheet['!hrStyles'].W7,17); // Overtime on Saturday 14th overrides weekend fill.
+  assert.equal(sheet['!hrStyles'].AG7,16); // Permission + overtime on 24th.
+  const bytes=await attendanceWorkbookBytes(book),zip=new PizZip(bytes);
+  const xml=zip.file('xl/worksheets/sheet1.xml').asText(),styles=zip.file('xl/styles.xml').asText();
+  assert.match(styles,/FFFFE1E1/);assert.match(styles,/FFD9F2FF/);
+  assert.match(xml,/<c r="AG7"[^>]*t="inlineStr"><is>.*?FFB42318[\s\S]*?FF006A99/);
+  const saved=XLSX.read(bytes,{type:'array'});
+  assert.match(saved.Sheets['Presenze mensili'].AG7.v,/P2\nSTR 2,5 S\nSTR 1 ◷/);
+});

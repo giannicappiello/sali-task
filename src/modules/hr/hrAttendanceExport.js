@@ -4,7 +4,7 @@ import { calendarDay } from './hrCalendar.js';
 import { agreementForDay } from './hrAgreements.js';
 import { attendanceExportRows, attendanceDaySummary } from './hrAttendanceRows.js';
 export { attendanceExportRows, attendanceDaySummary } from './hrAttendanceRows.js';
-import { monthlyAttendance } from './hrMonthlyGrid.js';
+import { monthlyAttendance, attendanceCodeClass } from './hrMonthlyGrid.js';
 const round = value => Math.round(value * 100) / 100;
 import { styleAttendanceFile } from './hrWorkbookStyles.js';
 
@@ -43,6 +43,7 @@ export async function createAttendanceWorkbook(data, month, now = new Date()) {
     let style=r<=1 ? 1 : r===3 ? 15 : r<=5 ? 2 : c===0 ? 3 : c<headers.length ? [4,5,6,7,4,4,4,4][c-1] : 8;
     if(day && r>=4) style=day.festive ? 10 : day.saturday ? 9 : r<=5 ? 2 : 8;
     if(r>=6 && String(grid[ref].v).includes('?')) style=14;
+    if (r>=6 && c>=headers.length) { const codes=String(grid[ref].v).split('\n').map(attendanceCodeClass); if(codes.includes('hr-code-absence')) style=16; else if(codes.includes('hr-code-overtime')) style=17; }
     grid['!hrStyles'][ref]=style;
   }
   grid['!hrGrid']={lastRow:matrix.length,lastColumn:XLSX.utils.encode_col(last),firstDayColumn:headers.length};

@@ -3,6 +3,18 @@ import { monthDays, romeDay, romeInstant, timeInput } from './hrTime.js';
 
 export const CALENDAR_EVENT_LABELS = { overtime: 'Straordinario', permission: 'Permesso', leave: 'Ferie', illness: 'Malattia', pregnancy: 'Maternità' };
 export const requestVersion = row => Object.fromEntries(['kind', 'starts_at', 'ends_at', 'note', 'status'].map(key => [key, row[key] ?? null]));
+const hoursLabel = hours => hours.toLocaleString('it-IT', { maximumFractionDigits: 2 });
+function dailyRequestHours(requests, day, kind, status) {
+  const start = Date.parse(romeInstant(`${day}T00:00`));
+  const next = new Date(`${day}T12:00:00Z`); next.setUTCDate(next.getUTCDate() + 1);
+  const end = Date.parse(romeInstant(`${next.toISOString().slice(0, 10)}T00:00`));
+  const intervals = requests.filter(row => row.kind === kind && row.status === status)
+    .map(row => [Math.max(start, Date.parse(row.starts_at)), Math.min(end, Date.parse(row.ends_at))])
+    .filter(([from, to]) => to > from).sort((a, b) => a[0] - b[0]);
+  let until = start, duration = 0;
+  for (const [from, to] of intervals) { duration += Math.max(0, to - Math.max(from, until)); until = Math.max(until, to); }
+  return duration / 3600000;
+}
 export function eventsForDay(requests, userId, day) {
   const start = Date.parse(romeInstant(`${day}T00:00`));
   const next = new Date(`${day}T12:00:00Z`); next.setUTCDate(next.getUTCDate() + 1);
@@ -17,18 +29,24 @@ export function monthlyAttendance(data, month, now = new Date()) {
     const missingSchedule = detail.Note.includes('Orario dipendente non configurato');
     const unknown = summary.unknown && !future && !missingSchedule;
     const overtime = detail['Ore straordinario approvate'];
+    const requests = eventsForDay(data.requests, detail.employeeId, detail.Data);
+    const permissionHours = dailyRequestHours(requests, detail.Data, 'permission', 'approved');
+    const pendingPermission = dailyRequestHours(requests, detail.Data, 'permission', 'pending');
+    const pendingOvertime = dailyRequestHours(requests, detail.Data, 'overtime', 'pending');
+    const pendingHours = pendingPermission > 0 || pendingOvertime > 0;
     const codes = [];
-    if (!future && summary.present) codes.push('PR');
+    if (!future && summary.present && !summary.permission && overtime <= 0 && !pendingHours) codes.push('PR');
     if (summary.leave) codes.push('F');
-    if (summary.permission) codes.push('P');
+    if (summary.permission) codes.push(permissionHours > 0 ? `P${hoursLabel(permissionHours)}` : 'P');
+    if (pendingPermission > 0) codes.push(`P${hoursLabel(pendingPermission)} ◷`);
     if (detail['Malattia approvata']) codes.push('M');
     if (detail['Maternità approvata']) codes.push('MAT');
     if (!future && summary.absence) codes.push('A');
     if (unknown) codes.push('?');
     if (!future && missingSchedule) codes.push('Orario?');
-    if (overtime > 0) codes.push(`STR ${overtime.toLocaleString('it-IT', { maximumFractionDigits: 2 })}h${summary.separate ? ' S' : ''}`);
-    const requests = eventsForDay(data.requests, detail.employeeId, detail.Data);
-    grouped.get(detail.employeeId).push({ ...summary, unknown, future, missingSchedule, overtime, day: detail.Data, detail, codes, requests, pending: requests.some(row => row.status === 'pending') });
+    if (overtime > 0) codes.push(`STR ${hoursLabel(overtime)}${summary.separate ? ' S' : ''}`);
+    if (pendingOvertime > 0) codes.push(`STR ${hoursLabel(pendingOvertime)} ◷`);
+    grouped.get(detail.employeeId).push({ ...summary, unknown, future, missingSchedule, overtime, pendingHours, day: detail.Data, detail, codes, requests, pending: requests.some(row => row.status === 'pending') });
   }
   return { days, rows: [...grouped.entries()].map(([userId, cells]) => {
     const total = { present: 0, leave: 0, absence: 0, permission: 0, weekdayOvertime: 0, festiveOvertime: 0, separateOvertime: 0 };

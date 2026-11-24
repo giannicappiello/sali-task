@@ -13,7 +13,7 @@ function fixture() {
 test('monthly matrix preserves schedule presence with partial permission and overtime in the same cell', () => {
   const data = fixture(), grid = monthlyAttendance(data, '2026-11', now), row = grid.rows[0], cell = row.cells.find(c => c.day === '2026-11-24');
   assert.equal(grid.days.length, 30);
-  assert.deepEqual(cell.codes, ['PR', 'P', 'STR 2h']);
+  assert.deepEqual(cell.codes, ['P1', 'P1 ◷', 'STR 2']);
   assert.equal(cell.pending, true); assert.equal(cell.detail['Ore presenza rilevata'], 7);
   assert.equal(row.total.present, 17); assert.equal(row.total.permission, 1); assert.equal(row.total.weekdayOvertime, 2);
 });
@@ -23,7 +23,7 @@ test('future days stay planned without false missing exits; separate overtime an
   assert.equal(future.future, true); assert.equal(future.unknown, false); assert.deepEqual(future.codes, ['F']);
   assert.equal(grid.rows[0].total.leave, 2);
   assert.equal(grid.rows[1].total.weekdayOvertime, 0); assert.equal(grid.rows[1].total.separateOvertime, 1.5);
-  assert.deepEqual(grid.rows[1].cells.find(c => c.day === '2026-11-25').codes, ['STR 1,5h S']);
+  assert.deepEqual(grid.rows[1].cells.find(c => c.day === '2026-11-25').codes, ['STR 1,5 S']);
 });
 test('holidays and weekends stay distinct and pending/rejected events do not alter approved totals', () => {
   const data = fixture(); data.requests.push(request('overtime', '2026-11-01T08:00', '2026-11-01T10:00'), request('overtime', '2026-11-24T19:00', '2026-11-24T21:00', 'a', 'rejected'));
@@ -55,4 +55,28 @@ test('cell drafts use the employee shift; decimal hours, range edits and validat
   assert.equal(changed.id, existing.id); assert.equal(changed.expected.status, 'approved');
   for (const hours of ['', '0', '17', 'abc']) assert.throws(() => calendarRequestPayload('a', { ...draft, hours, note: 'Prova' }, null, 'key'));
   assert.throws(() => calendarRequestPayload('a', { ...draft, note: '' }, null, 'key'), /motivazione/);
+});
+
+test('timed references replace PR, union daily permissions and distinguish pending hours without altering totals', () => {
+  const data=fixture(); data.requests=[
+    request('permission','2026-11-24T09:00','2026-11-24T11:00'),
+    request('permission','2026-11-24T10:00','2026-11-24T11:30'),
+    request('overtime','2026-11-23T17:00','2026-11-23T18:00'),
+    request('overtime','2026-11-24T06:00','2026-11-24T07:00','b','pending'),
+    request('permission','2026-11-24T12:00','2026-11-24T14:00','b','rejected'),
+    request('permission','2026-11-24T12:00','2026-11-24T14:00','b','cancelled'),
+  ];
+  const grid=monthlyAttendance(data,'2026-11',now), a=grid.rows[0],b=grid.rows[1];
+  assert.deepEqual(a.cells.find(c=>c.day==='2026-11-24').codes,['P2,5']);
+  assert.deepEqual(a.cells.find(c=>c.day==='2026-11-23').codes,['STR 1']);
+  assert.deepEqual(a.cells.find(c=>c.day==='2026-11-20').codes,['PR']);
+  assert.deepEqual(b.cells.find(c=>c.day==='2026-11-24').codes,['STR 1 ◷']);
+  assert.equal(b.total.separateOvertime,0);assert.equal(b.total.permission,0);assert.equal(b.total.present,17);
+  assert.equal(a.total.weekdayOvertime,1);assert.equal(a.total.permission,1);
+});
+test('permission hours are clipped to each Rome civil day, including overnight and fractional durations',()=>{
+  const data=fixture();data.requests=[request('permission','2026-11-23T23:30','2026-11-24T02:00')];
+  const row=monthlyAttendance(data,'2026-11',now).rows[0];
+  assert.deepEqual(row.cells.find(c=>c.day==='2026-11-23').codes,['P0,5']);
+  assert.deepEqual(row.cells.find(c=>c.day==='2026-11-24').codes,['P2']);
 });

@@ -313,7 +313,8 @@ function drawFooter(doc, order, model) {
   cell(doc, 62, y + 38, 49, 9, "Aspetto esteriore dei beni", order.aspetto_esteriore_beni);
   cell(doc, 111, y + 38, 45, 9, "Abbuono", order.abbuono === null || order.abbuono === undefined || order.abbuono === "" ? "" : money(order.abbuono), { align: "right" });
   totalCell(y + 38, 9, "Totale fattura", money(model.totals.totale_documento));
-  cell(doc, 7, y + 47, 78, 11, "Note", order.commenti || order.note_mexal, { maxLines: 2, fontSize: 6.5 });
+  const omitComments = order.party_kind !== "supplier" && ["prof", "ph"].includes(String(order.modulo_ordini || "prof").trim().toLowerCase());
+  cell(doc, 7, y + 47, 78, 11, "Note", omitComments ? "" : order.commenti || order.note_mexal, { maxLines: 2, fontSize: 6.5 });
   cell(doc, 85, y + 47, 14, 11, "Colli", order.colli, { align: "right" });
   cell(doc, 99, y + 47, 14, 11, "Peso", order.peso, { align: "right" });
   cell(doc, 113, y + 47, 14, 11, "Volume", order.volume, { align: "right" });

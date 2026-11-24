@@ -1,4 +1,4 @@
-import { attendanceExportRows, attendanceDaySummary } from './hrAttendanceExport.js';
+import { attendanceExportRows, attendanceDaySummary } from './hrAttendanceRows.js';
 import { monthDays, romeDay, romeInstant, timeInput } from './hrTime.js';
 
 export const CALENDAR_EVENT_LABELS = { overtime: 'Straordinario', permission: 'Permesso', leave: 'Ferie', illness: 'Malattia', pregnancy: 'Maternità' };
@@ -13,7 +13,7 @@ function dailyRequestHours(requests, day, kind, status) {
     .filter(([from, to]) => to > from).sort((a, b) => a[0] - b[0]);
   let until = start, duration = 0;
   for (const [from, to] of intervals) { duration += Math.max(0, to - Math.max(from, until)); until = Math.max(until, to); }
-  return duration / 3600000;
+  return Math.round(duration / 3600000 * 100) / 100;
 }
 export function eventsForDay(requests, userId, day) {
   const start = Date.parse(romeInstant(`${day}T00:00`));
@@ -46,14 +46,19 @@ export function monthlyAttendance(data, month, now = new Date()) {
     if (!future && missingSchedule) codes.push('Orario?');
     if (overtime > 0) codes.push(`STR ${hoursLabel(overtime)}${summary.separate ? ' S' : ''}`);
     if (pendingOvertime > 0) codes.push(`STR ${hoursLabel(pendingOvertime)} ◷`);
-    grouped.get(detail.employeeId).push({ ...summary, unknown, future, missingSchedule, overtime, pendingHours, day: detail.Data, detail, codes, requests, pending: requests.some(row => row.status === 'pending') });
+    grouped.get(detail.employeeId).push({ ...summary, unknown, future, missingSchedule, overtime, pendingOvertime, pendingHours, day: detail.Data, detail, codes, requests, pending: requests.some(row => row.status === 'pending') });
   }
   return { days, rows: [...grouped.entries()].map(([userId, cells]) => {
-    const total = { present: 0, leave: 0, absence: 0, permission: 0, weekdayOvertime: 0, festiveOvertime: 0, separateOvertime: 0 };
+    const total = { present: 0, leave: 0, absence: 0, permission: 0, weekdayOvertime: 0, festiveOvertime: 0, separateOvertime: 0, pendingOvertime: 0, approvedWeekdayOvertime: 0, approvedFestiveOvertime: 0, pendingWeekdayOvertime: 0, pendingFestiveOvertime: 0, separateWeekdayOvertime: 0, separateFestiveOvertime: 0 };
     for (const cell of cells) {
       if (!cell.future) { total.present += Number(cell.present); total.absence += Number(cell.absence); }
       total.leave += Number(cell.leave); total.permission += Number(cell.permission);
-      total[cell.separate ? 'separateOvertime' : cell.festive ? 'festiveOvertime' : 'weekdayOvertime'] += cell.overtime || 0;
+      const period = cell.festive ? 'Festive' : 'Weekday';
+      total[cell.festive ? 'festiveOvertime' : 'weekdayOvertime'] += (cell.overtime || 0) + cell.pendingOvertime;
+      total[`approved${period}Overtime`] += cell.overtime || 0;
+      total[`pending${period}Overtime`] += cell.pendingOvertime;
+      total.pendingOvertime += cell.pendingOvertime;
+      if (cell.separate) { total.separateOvertime += cell.overtime || 0; total[`separate${period}Overtime`] += cell.overtime || 0; }
     }
     return { employee: data.employees.find(row => row.user_id === userId), cells, total };
   }) };

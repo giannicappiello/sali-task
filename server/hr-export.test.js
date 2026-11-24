@@ -49,7 +49,7 @@ test('generated Excel preserves text as text and contains daily and summary shee
   assert.match(xml,/state="frozen"/);
   assert.match(xml,/orientation="landscape"/);
   assert.ok(xml.indexOf('<pageSetup')<xml.indexOf('<ignoredErrors>'));
-  assert.match(xml,/<c r="M7"[^>]*s="10"/); // Sunday 6 September
+  assert.match(xml,/<c r="O7"[^>]*s="10"/); // Sunday 6 September
   assert.match(zip.file('xl/styles.xml').asText(),/FFE12D39/);
   assert.equal(saved.Sheets['Presenze mensili'].F5.v,'Ore straordinario feriali totali');
 });
@@ -77,7 +77,7 @@ test('monthly totals count approved overtime on weekdays and weekends once, pres
   assert.equal(attendanceDaySummary({...row,'Ore scoperte da verificare':8}).value,'A');
   assert.equal(attendanceDaySummary({...row,'Ore presenza rilevata':null,'Ore scoperte da verificare':8}).value,'?');
   d.attendance.push({user_id:'e',checkin_at:'2026-08-23T06:00:00Z',checkout_at:null});
-  assert.equal((await createAttendanceWorkbook(d,'2026-08',now)).Sheets['Presenze mensili'].G7.v,'Da verificare');
+  assert.equal((await createAttendanceWorkbook(d,'2026-08',now)).Sheets['Presenze mensili'].G7.v,4);
 });
 
 test('all employee lists use the same Italian alphabetical order without mutating source arrays',()=>{
@@ -89,7 +89,7 @@ test('all employee lists use the same Italian alphabetical order without mutatin
   assert.equal(employees[0].name,'Zeno');
 });
 
-test('separate overtime follows agreement dates, excludes ordinary totals and preserves daily hours',async()=>{
+test('separate overtime follows agreement dates, preserves ordinary payroll details and sums all visible hours in the monthly roster',async()=>{
   const d=data();
   d.contracts=[{id:'old',user_id:'e',effective_from:'2026-01-01',overtime_separate:false},{id:'new',user_id:'e',effective_from:'2026-08-15',overtime_separate:true}];
   for(const [day,hours] of [['2026-08-14',10],['2026-08-15',5],['2026-08-16',4],['2026-08-22',6]]) {
@@ -97,8 +97,8 @@ test('separate overtime follows agreement dates, excludes ordinary totals and pr
     d.requests.push({user_id:'e',kind:'overtime',status:'approved',starts_at:day+'T06:00:00Z',ends_at:day+'T08:00:00Z'});
   }
   const book=await createAttendanceWorkbook(d,'2026-08',now);
-  assert.equal(book.Sheets['Presenze mensili'].F7.v,2);
-  assert.equal(book.Sheets['Presenze mensili'].G7.v,0);
+  assert.equal(book.Sheets['Presenze mensili'].F7.v,4);
+  assert.equal(book.Sheets['Presenze mensili'].G7.v,4);
   const separate=XLSX.utils.sheet_to_json(book.Sheets['Straordinari separati'])[0];
   assert.equal(separate['Ore straordinario feriali separate'],2);
   assert.equal(separate['Ore straordinario festive separate'],4);
@@ -110,8 +110,8 @@ test('separate overtime follows agreement dates, excludes ordinary totals and pr
   assert.equal(daily['Ore straordinario festive separate'],2);
   d.attendance.push({user_id:'e',checkin_at:'2026-08-23T06:00:00Z',checkout_at:null});
   const unknown=await createAttendanceWorkbook(d,'2026-08',now);
-  assert.equal(unknown.Sheets['Presenze mensili'].G7.v,0);
-  assert.equal(XLSX.utils.sheet_to_json(unknown.Sheets['Straordinari separati'])[0]['Ore straordinario festive separate'],'Da verificare');
+  assert.equal(unknown.Sheets['Presenze mensili'].G7.v,4);
+  assert.equal(XLSX.utils.sheet_to_json(unknown.Sheets['Straordinari separati'])[0]['Ore straordinario festive separate'],4);
   const saved=XLSX.read(await attendanceWorkbookBytes(book),{type:'array'});
   assert.ok(saved.SheetNames.includes('Straordinari separati'));
 });

@@ -22,7 +22,10 @@ export async function styleAttendanceFile(bytes, workbook) {
         const ref=attrs.match(/\br="([^"]+)"/)?.[1],style=sheet['!hrStyles'][ref];
         return style==null ? tag : `<c${attrs.replace(/\s+s="\d+"/g,'')} s="${style}">`;
       });
-      const views='<sheetViews><sheetView workbookViewId="0" showGridLines="0"><pane xSplit="7" ySplit="6" topLeftCell="H7" activePane="bottomRight" state="frozen"/><selection pane="bottomRight" activeCell="H7" sqref="H7"/></sheetView></sheetViews>';
+      const firstDay = sheet['!hrGrid'].firstDayColumn ?? 7;
+      const column = value => { let label=''; for(let n=value+1;n>0;n=Math.floor((n-1)/26)) label=String.fromCharCode(65+(n-1)%26)+label; return label; };
+      const firstCell = `${column(firstDay)}7`;
+      const views=`<sheetViews><sheetView workbookViewId="0" showGridLines="0"><pane xSplit="${firstDay}" ySplit="6" topLeftCell="${firstCell}" activePane="bottomRight" state="frozen"/><selection pane="bottomRight" activeCell="${firstCell}" sqref="${firstCell}"/></sheetView></sheetViews>`;
       xml=xml.replace(/<sheetViews>[\s\S]*?<\/sheetViews>/,views);
       if(!xml.includes('<sheetViews>')) xml=xml.replace(/(<dimension[^>]*\/>)/,`$1${views}`);
       xml=xml.replace(/<pageMargins[^>]*\/>/,'');

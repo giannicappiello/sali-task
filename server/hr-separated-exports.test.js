@@ -6,7 +6,7 @@ const data={employees:[{user_id:'a',name:'Anna',active:true},{user_id:'b',name:'
 test('attendance download has only the monthly sheet with full Italian date headers',async()=>{
  const book=await createMonthlyAttendanceWorkbook(data,'2026-09');
  const saved=XLSX.read(await attendanceWorkbookBytes(book),{type:'array'});
- assert.deepEqual(saved.SheetNames,['Presenze mensili']);assert.equal(saved.Sheets['Presenze mensili'].H5.v,'01-09-2026');
+ assert.deepEqual(saved.SheetNames,['Presenze mensili']);assert.equal(saved.Sheets['Presenze mensili'].J5.v,'01-09-2026');
 });
 test('managed export selects flagged employees, keeps daily hours and values them numerically',async()=>{
  const book=await createManagedOvertimeWorkbook(data,'2026-09');
@@ -21,5 +21,6 @@ test('missing rates and incomplete weekend punches do not create misleading amou
  assert.equal(XLSX.utils.sheet_to_json(book.Sheets['Straordinario gestito'])[0]['Valorizzazione EUR'],'Da definire');
  const incomplete={...data,attendance:[{user_id:'a',checkin_at:'2026-09-12T08:00:00Z',checkout_at:null}]};
  const check=await createManagedOvertimeWorkbook(incomplete,'2026-09',new Date('2026-09-13T09:00:00Z'));
- assert.equal(XLSX.utils.sheet_to_json(check.Sheets['Straordinario gestito'])[0]['Ore totali'],'Da verificare');
+ assert.equal(XLSX.utils.sheet_to_json(check.Sheets['Straordinario gestito'])[0]['Ore totali'],12);
+ assert.equal(XLSX.utils.sheet_to_json(check.Sheets['Straordinario gestito'])[0]['Verifica presenze'],'Da verificare');
 });

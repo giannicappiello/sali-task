@@ -56,8 +56,10 @@ test('Monthly calendar event persistence and HR authorization', async (t) => {
 
   await db.exec(await readFile(new URL('../supabase/migrations/20261124095200_hr_monthly_calendar_requests.sql',import.meta.url),'utf8'));
   await db.exec(await readFile(new URL('../supabase/migrations/20260920190000_hr_employee_recipients.sql',import.meta.url),'utf8'));
+  await db.exec(await readFile(new URL('../supabase/migrations/20260924210000_workspace_hr_separate_overtime.sql',import.meta.url),'utf8'));
   await db.exec(await readFile(new URL('../supabase/migrations/20261101110000_hr_default_presence.sql',import.meta.url),'utf8'));
   await db.exec(await readFile(new URL('../supabase/migrations/20261124103323_hr_personal_attendance_scope.sql',import.meta.url),'utf8'));
+  await db.exec(await readFile(new URL('../supabase/migrations/20261124110530_hr_presence_schedule_overtime_flag.sql',import.meta.url),'utf8'));
   const hr=(await db.query('select id from reparti where workspace_hr')).rows[0].id;
   for(const user of [employee,manager]) await rpc(admin,'workspace_save_user_access',[user,normalRole,[hr],'[]',true]);
   await rpc(admin,'workspace_hr_configure',['member',JSON.stringify({user_id:manager,manager:true})]);
@@ -133,6 +135,8 @@ test('Monthly calendar event persistence and HR authorization', async (t) => {
     let managed=await snapshot(manager); assert.deepEqual(ids(managed),[employee,manager].sort());
     for(const key of ['shifts','requests','attendance','presence_schedules']) assert.ok(managed[key].every(row=>[employee,manager].includes(row.user_id)),key);
     assert.ok(managed.shifts.some(row=>row.user_id===employee));
+    assert.ok(managed.presence_schedules.every(row => typeof row.overtime_separate === 'boolean'));
+    assert.ok(managed.presence_schedules.every(row => row.agreed_pay === undefined && row.overtime_rate === undefined));
     assert.equal(managed.contracts,undefined); assert.equal(managed.audit,undefined);
     assert.deepEqual(ids(await snapshot(admin)),[]);
     assert.ok(ids(await snapshot(admin,true)).includes(inactive));

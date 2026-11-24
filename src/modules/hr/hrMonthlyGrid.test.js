@@ -22,7 +22,7 @@ test('future days stay planned without false missing exits; separate overtime an
   const future = grid.rows[0].cells.find(c => c.day === '2026-11-25');
   assert.equal(future.future, true); assert.equal(future.unknown, false); assert.deepEqual(future.codes, ['F']);
   assert.equal(grid.rows[0].total.leave, 2);
-  assert.equal(grid.rows[1].total.weekdayOvertime, 0); assert.equal(grid.rows[1].total.separateOvertime, 1.5);
+  assert.equal(grid.rows[1].total.weekdayOvertime, 1.5); assert.equal(grid.rows[1].total.separateOvertime, 1.5);
   assert.deepEqual(grid.rows[1].cells.find(c => c.day === '2026-11-25').codes, ['STR 1,5 S']);
 });
 test('holidays and weekends stay distinct and pending/rejected events do not alter approved totals', () => {
@@ -57,7 +57,7 @@ test('cell drafts use the employee shift; decimal hours, range edits and validat
   assert.throws(() => calendarRequestPayload('a', { ...draft, note: '' }, null, 'key'), /motivazione/);
 });
 
-test('timed references replace PR, union daily permissions and distinguish pending hours without altering totals', () => {
+test('timed references replace PR, union daily permissions and distinguish pending hours while preserving the approved-only breakdown', () => {
   const data=fixture(); data.requests=[
     request('permission','2026-11-24T09:00','2026-11-24T11:00'),
     request('permission','2026-11-24T10:00','2026-11-24T11:30'),
@@ -71,7 +71,7 @@ test('timed references replace PR, union daily permissions and distinguish pendi
   assert.deepEqual(a.cells.find(c=>c.day==='2026-11-23').codes,['STR 1']);
   assert.deepEqual(a.cells.find(c=>c.day==='2026-11-20').codes,['PR']);
   assert.deepEqual(b.cells.find(c=>c.day==='2026-11-24').codes,['STR 1 ◷']);
-  assert.equal(b.total.separateOvertime,0);assert.equal(b.total.permission,0);assert.equal(b.total.present,17);
+  assert.equal(b.total.weekdayOvertime,1);assert.equal(b.total.pendingWeekdayOvertime,1);assert.equal(b.total.approvedWeekdayOvertime,0);assert.equal(b.total.separateOvertime,0);assert.equal(b.total.permission,0);assert.equal(b.total.present,17);
   assert.equal(a.total.weekdayOvertime,1);assert.equal(a.total.permission,1);
 });
 test('permission hours are clipped to each Rome civil day, including overnight and fractional durations',()=>{

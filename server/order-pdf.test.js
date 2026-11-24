@@ -232,3 +232,23 @@ test("PH conserva il logo Sali anche con intestazione gestita e senza rete", asy
   assert.equal(Object.keys(pdf.internal.collections.addImage_images).length, 1);
   assert.doesNotMatch(pdf.output(), /PROGRE/);
 });
+
+test('PR e PH omettono commenti e note di fallback da bozze, documenti Mexal e allegati email senza modificare gli ordini', async()=>{
+  const {createOrderPdfAttachments}=await import('./orders/order-pdf-server.js');
+  const lines=[{codice_articolo:'IT-01',quantita:1,quantita_ocm:1,quantita_ocx:1,quantita_oci:1,prezzo_listino:10}];
+  for(const modulo_ordini of ['prof','ph',undefined]){
+    for(const commenti of ['COMMENTO_INTERNO_RISERVATO','']){
+      const order={modulo_ordini,commenti,note_mexal:'NOTA_INTERNA_FALLBACK'};
+      for(const type of [null,'OCM','OCI','OCX']){
+        const pdf=await createOrderPdf(order,lines,{logo:false,document:type?{type,serie:'1',numero:'123'}:null});
+        assert.doesNotMatch(pdf.output(),/COMMENTO_INTERNO_RISERVATO|NOTA_INTERNA_FALLBACK/);
+      }
+      const attachments=await createOrderPdfAttachments({order,lines,documents:['OCM','OCI','OCX'].map(tipo_documento=>({tipo_documento,serie:1,numero:123}))});
+      for(const attachment of attachments)assert.doesNotMatch(new TextDecoder().decode(attachment.content),/COMMENTO_INTERNO_RISERVATO|NOTA_INTERNA_FALLBACK/);
+      assert.equal(order.commenti,commenti);assert.equal(order.note_mexal,'NOTA_INTERNA_FALLBACK');
+    }
+  }
+  for(const order of [{modulo_ordini:'private',commenti:'NOTA_PRIVATE'},{party_kind:'supplier',commenti:'NOTA_FORNITORE'}]){
+    const pdf=await createOrderPdf(order,lines,{logo:false});assert.ok(pdf.output().includes(order.commenti));
+  }
+});

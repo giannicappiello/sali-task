@@ -1,3 +1,4 @@
+import {loadCommissionParticularities} from '../../server/mexal/commission-particularities.js';
 import { createClient } from "@supabase/supabase-js";
 import process from "node:process";
 import { buildMexalClient, verifyUser } from "../../server/mexal/sync-products.js";
@@ -150,13 +151,17 @@ export default async function handler(req, res) {
     if (String(order.modulo_ordini || "prof").toLowerCase() === "ph") {
       return res.status(200).json({ success: true, skipped: true, message: "Gli Ordini PH non prevedono invio o riconciliazione con Mexal." });
     }
-    const [{ data: customer, error: customerError }, { data: products, error: productsError }, { data: rules, error: rulesError }] = await Promise.all([
+    const { data: existingDocuments, error: existingDocumentsError } = await admin.from("ordini_documenti_mexal")
+      .select("tipo_documento,numero").eq("ordine_id", orderId);
+    if (existingDocumentsError) throw existingDocumentsError;
+    const [{ data: customer, error: customerError }, { data: products, error: productsError }, { data: rules, error: rulesError }, {data:particularities,error:particularitiesError}] = await Promise.all([
       admin.from("ordini_clienti_cache").select("*").eq("codice_cliente", order.codice_cliente).maybeSingle(),
       admin.from("ordini_prodotti_cache").select("*").in("codice_articolo", lines.filter((line) => !line.riga_spedizione && line.codice_articolo).map((line) => line.codice_articolo)),
       admin.from("mexal_regole_provvigioni").select("*").eq("attiva", true),
+      loadCommissionParticularities(admin),
     ]);
-    if (customerError) throw customerError; if (productsError) throw productsError; if (rulesError) throw rulesError;
-    const commissionedLines = calculateCommissions({ order, customer, lines, products, rules });
+    if (customerError) throw customerError; if (productsError) throw productsError; if (rulesError) throw rulesError; if(particularitiesError) throw particularitiesError;
+    const commissionedLines = calculateCommissions({ order, customer, lines, products, rules, particularities, preserveExisting: (existingDocuments || []).some(document => text(document.numero)) || ["OCM", "OCX", "OCI", "OCT"].some(kind => text(order[`numero_${kind.toLowerCase()}`])) });
     const commissionUpdates = commissionedLines
       .filter((line) => line.provvigione_percentuale !== null && line.provvigione_percentuale !== undefined && Number.isFinite(Number(line.provvigione_percentuale)))
       .map((line) => ({ id: line.id, provvigione_percentuale: line.provvigione_percentuale, provvigione_regola_id: line.provvigione_regola_id, provvigione_dettaglio_calcolo: line.provvigione_dettaglio_calcolo, provvigione_calcolata_il: new Date().toISOString() }));
@@ -198,9 +203,6 @@ export default async function handler(req, res) {
       documentConfig.serie_oci = moduleConfig.serie_documento;
     }
     const mexal = buildMexalClient(); const documents = []; const failures = [];
-    const { data: existingDocuments, error: existingDocumentsError } = await admin.from("ordini_documenti_mexal")
-      .select("tipo_documento,numero").eq("ordine_id", orderId);
-    if (existingDocumentsError) throw existingDocumentsError;
     for (const document of existingDocuments || []) {
       if (text(document.numero)) done.add(document.tipo_documento);
     }

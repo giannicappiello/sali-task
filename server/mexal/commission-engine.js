@@ -1,3 +1,4 @@
+import {resolveCommissionParticularity} from './commission-particularities.js';
 const text = (value) => String(value ?? "").trim();
 const integer = (value) => {
   if (!text(value)) return null;
@@ -55,15 +56,31 @@ function withoutCommission(line, reason) {
   };
 }
 
-export function calculateCommissions({ order = {}, customer, lines = [], products = [], rules = [], now = new Date() }) {
+export function calculateCommissions({ order = {}, customer, lines = [], products = [], rules = [], particularities = [], preserveExisting = false, now = new Date() }) {
   const byCode = new Map((products || []).map((product) => [text(product.codice_articolo || product.codice_mexal).toUpperCase(), product]));
   const customerCategory = customerCommissionCategory(customer);
   const agent = text(order.codice_agente_mexal || customer?.codice_agente_mexal || customer?.dati_mexal?.cod_agente);
   if (customerCategory === null) throw commissionError({ customer, line: lines[0], customerCategory, agent, reason: "Categoria provvigionale cliente assente." });
   return lines.map((line) => {
     if (line.riga_spedizione === true) return withoutCommission(line, "Spese di spedizione escluse dalle provvigioni.");
+    // Reconciliation of an already-created Mexal document must not rewrite its
+    // historical commission merely because the current rules changed.
+    if(preserveExisting){
+      if(line.provvigione_percentuale === null || line.provvigione_percentuale === undefined)return withoutCommission(line, "Documento Mexal esistente: provvigione storica da verificare, non ricostruita automaticamente.");
+      const saved=Number(line.provvigione_percentuale);
+      if(!Number.isFinite(saved) || saved<0 || saved>100)throw commissionError({customer,line,customerCategory,agent,reason:"Provvigione storica non valida."});
+      return {...line};
+    }
     const product = byCode.get(text(line.codice_articolo).toUpperCase()) || line.prodotto || {};
     const productCategory = productCommissionCategory(product);
+    let particularity;
+    try {particularity=resolveCommissionParticularity(particularities,{customer,product:{...product,codice_articolo:line.codice_articolo},customerCategory,productCategory,date:order.data_ordine || now});}
+    catch(error){throw commissionError({customer,line,customerCategory,productCategory,agent,reason:error.message});}
+    if(particularity){
+      const vatCode=text(line.cod_iva ?? line.codice_iva_mexal ?? line.aliquota_iva) || productMexalVatCode(product);
+      return {...line,codice_iva_mexal:vatCode || undefined,provvigione_percentuale:particularity.percentage,provvigione_regola_id:null,
+        provvigione_dettaglio_calcolo:{categoria_cliente:customerCategory,categoria_prodotto:productCategory,codice_agente_mexal:agent || null,origine:'mexal_particolarita_provvigioni',particolarita_id:particularity.rule.id,tipo_conto:particularity.rule.tp_dato_conto,tipo_articolo:particularity.rule.tp_dato_art}};
+    }
     if (productCategory === null) return withoutCommission(line, "Categoria provvigionale prodotto assente.");
     const candidates = rules.filter((rule) => activeOnDate(rule, now) && integer(rule.categoria_cliente) === customerCategory && integer(rule.categoria_prodotto) === productCategory);
     const rule = candidates.find((item) => text(item.codice_agente_mexal) === agent && agent) || candidates.find((item) => !text(item.codice_agente_mexal));

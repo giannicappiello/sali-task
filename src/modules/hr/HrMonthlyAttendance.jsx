@@ -1,0 +1,34 @@
+import { useMemo, useState } from 'react';
+import { ChevronLeft, ChevronRight, Download } from 'lucide-react';
+import { monthlyAttendance } from './hrMonthlyGrid.js';
+import { formatDate, romeDay } from './hrTime';
+import HrCalendarRequestDialog from './HrCalendarRequestDialog';
+import { calendarDay } from './hrCalendar.js';
+import './hr-monthly-attendance.css';
+
+const totals = [['present', 'Presenze'], ['leave', 'Ferie'], ['absence', 'Assenze da verificare'], ['permission', 'Permessi'], ['weekdayOvertime', 'Straord. feriali'], ['festiveOvertime', 'Straord. festivi']];
+const number = value => value.toLocaleString('it-IT', { maximumFractionDigits: 2 });
+export default function HrMonthlyAttendance({ data, employees, month, onMonthChange, onReload, onSchedule, onClosure, onAbsence, onCompanyCalendar, onExport, canManage }) {
+  const [selection, setSelection] = useState(null), [filter, setFilter] = useState(''), [notice, setNotice] = useState('');
+  const grid = useMemo(() => monthlyAttendance(data, month), [data, month]);
+  const visibleIds = new Set(employees.map(row => row.user_id));
+  const rows = grid.rows.filter(row => visibleIds.has(row.employee.user_id) && (!filter || row.employee.user_id === filter));
+  const monthLabel = new Date(`${month}-01T12:00:00Z`).toLocaleDateString('it-IT', { month: 'long', year: 'numeric' });
+  function move(delta) { const date = new Date(`${month}-01T12:00:00Z`); date.setUTCMonth(date.getUTCMonth() + delta); onMonthChange(date.toISOString().slice(0, 7)); setNotice(''); }
+  async function saved(result) {
+    const reloaded = await onReload();
+    setNotice({ warning: reloaded === false, text: reloaded === false ? 'Evento salvato, ma il prospetto non è stato ricaricato. Premi Aggiorna.' : result.status === 'pending' ? 'Richiesta salvata in attesa di approvazione.' : 'Evento salvato. Prospetto aggiornato.' });
+  }
+  return <section className="hr-panel hr-monthly-attendance" aria-labelledby="hr-monthly-title">
+    <div className="hr-heading"><div><h2 id="hr-monthly-title">Prospetto presenze mensili</h2><p className="hr-muted hr-small">{monthLabel} · Seleziona una cella per gestire straordinari, permessi e assenze.</p></div><div className="hr-actions"><button type="button" aria-label="Mese precedente" onClick={() => move(-1)}><ChevronLeft size={18}/></button><button type="button" onClick={() => onMonthChange(romeDay().slice(0, 7))}>Questo mese</button><button type="button" aria-label="Mese successivo" onClick={() => move(1)}><ChevronRight size={18}/></button><button type="button" onClick={onCompanyCalendar}>Orario aziendale</button><button type="button" onClick={onExport}><Download size={16}/>Esporta Excel</button></div></div>
+    <div className="hr-monthly-tools"><label>Dipendente<select value={filter} onChange={event => setFilter(event.target.value)}><option value="">Tutti</option>{employees.map(employee => <option key={employee.user_id} value={employee.user_id}>{employee.name}</option>)}</select></label>{canManage && <div className="hr-actions"><button type="button" onClick={onAbsence}>Assegna periodo di assenza</button><button type="button" onClick={onSchedule}>Assegna turno</button><button type="button" onClick={onClosure}>Chiusura / festività</button></div>}</div>
+    {notice && <p className={notice.warning ? 'hr-note' : 'hr-success'} role={notice.warning ? 'alert' : 'status'}>{notice.text}</p>}
+    <p className="hr-monthly-legend">PR presenza · F ferie · P permesso · M malattia · MAT maternità · STR ore straordinarie · S gestione separata · A assenza da verificare · ? uscita mancante · ◷ in attesa. Giorni futuri programmati, esclusi dal conteggio presenze.</p>
+    <div className="hr-monthly-scroll" role="region" tabIndex={0} aria-label={`Presenze di ${monthLabel}, scorri per vedere tutti i giorni`}>
+      <table className="hr-monthly-table" data-column-controls="off"><caption className="hr-sr-only">Presenze mensili per dipendente con riepiloghi e giornate modificabili</caption><thead><tr><th scope="col" className="hr-monthly-name">Dipendente</th>{totals.map(([key, label]) => <th scope="col" className="hr-monthly-total" key={key}>{label}{key.includes('Overtime') && <small>ore</small>}</th>)}{grid.days.map(day => { const date = new Date(`${day}T12:00:00Z`), cell = calendarDay(day); return <th scope="col" key={day} className={`${cell?.festive ? 'festive' : cell?.saturday ? 'saturday' : ''} ${day === romeDay() ? 'today' : ''}`} title={`${formatDate(date)}${cell?.holiday ? ` · ${cell.holiday}` : ''}`}><strong>{Number(day.slice(-2))}</strong><small>{date.toLocaleDateString('it-IT', { weekday: 'short', timeZone: 'UTC' })}</small></th>; })}</tr></thead>
+      <tbody>{rows.map(({ employee, cells, total }) => <tr key={employee.user_id}><th scope="row" className="hr-monthly-name"><strong>{employee.name}</strong>{employee.employee_code && <small>{employee.employee_code}</small>}</th>{totals.map(([key]) => <td className="hr-monthly-total" key={key}>{number(total[key])}{key === 'weekdayOvertime' && total.separateOvertime > 0 && <small title="Ore gestite separatamente dai totali ordinari">S: {number(total.separateOvertime)}h</small>}</td>)}{cells.map(cell => <td key={cell.day} className={`hr-monthly-day ${cell.festive ? 'festive' : cell.saturday ? 'saturday' : ''} ${cell.future ? 'future' : ''} ${cell.day === romeDay() ? 'today' : ''}`}><button type="button" className={cell.unknown || cell.absence ? 'anomaly' : ''} aria-label={`${employee.name}, ${formatDate(`${cell.day}T12:00:00Z`)}: ${cell.codes.join(', ') || (cell.future ? 'programmato' : 'nessun evento')}${cell.pending ? ', in attesa' : ''}`} title={cell.detail.Note || 'Apri giornata'} onClick={() => setSelection({ employee, cell })}>{cell.codes.map(code => <span key={code}>{code}</span>)}{cell.future && <small>Prev.</small>}{cell.pending && <span title="Richiesta in attesa">◷</span>}{!cell.codes.length && !cell.future && !cell.pending && <span className="hr-monthly-empty">—</span>}</button></td>)}</tr>)}</tbody></table>
+      {!rows.length && <p className="hr-muted">Nessun dipendente nel periodo o nei filtri selezionati.</p>}
+    </div>
+    {selection && <HrCalendarRequestDialog data={data} {...selection} canManage={canManage && selection.employee.active} onClose={() => setSelection(null)} onSaved={saved}/>}
+  </section>;
+}

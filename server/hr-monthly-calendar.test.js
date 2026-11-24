@@ -55,6 +55,9 @@ test('Monthly calendar event persistence and HR authorization', async (t) => {
   const rpc = async (user, fn, args) => (await as(user, `select ${fn}(${args.map((_, i) => `$${i + 1}`).join(',')}) as value`, args))[0].value;
 
   await db.exec(await readFile(new URL('../supabase/migrations/20261124095200_hr_monthly_calendar_requests.sql',import.meta.url),'utf8'));
+  await db.exec(await readFile(new URL('../supabase/migrations/20260920190000_hr_employee_recipients.sql',import.meta.url),'utf8'));
+  await db.exec(await readFile(new URL('../supabase/migrations/20261101110000_hr_default_presence.sql',import.meta.url),'utf8'));
+  await db.exec(await readFile(new URL('../supabase/migrations/20261124103323_hr_personal_attendance_scope.sql',import.meta.url),'utf8'));
   const hr=(await db.query('select id from reparti where workspace_hr')).rows[0].id;
   for(const user of [employee,manager]) await rpc(admin,'workspace_save_user_access',[user,normalRole,[hr],'[]',true]);
   await rpc(admin,'workspace_hr_configure',['member',JSON.stringify({user_id:manager,manager:true})]);
@@ -63,6 +66,15 @@ test('Monthly calendar event persistence and HR authorization', async (t) => {
   const save=(user,payload)=>rpc(user,'workspace_hr_save_calendar_request',[JSON.stringify(payload)]);
   const draft=(kind='permission',from='2030-11-04T08:00:00Z',to='2030-11-04T09:00:00Z')=>({user_id:employee,id:null,expected:null,kind,starts_at:from,ends_at:to,note:'Evento di prova',request_key:id()});
   const version=async key=>(await db.query("select jsonb_build_object('kind',kind,'starts_at',starts_at,'ends_at',ends_at,'note',note,'status',status) as v from workspace_hr_requests where id=$1",[key])).rows[0].v;
+  async function recipients(employeeId, reviewers) {
+    await db.exec('begin');
+    try {
+      await db.query("select set_config('request.jwt.claim.sub',$1,true)",[admin]);
+      await db.query('select workspace_hr_set_employee_recipients($1,$2)',[employeeId,reviewers]);
+      await db.exec('commit');
+    } catch(error) { await db.exec('rollback'); throw error; }
+  }
+  await recipients(employee,[manager]);
   let inserted, original;
   await t.test('manager assigns an approved partial absence; retries never duplicate; key cannot change payload',async()=>{
     original=draft(); inserted=await save(manager,original);
@@ -104,5 +116,38 @@ test('Monthly calendar event persistence and HR authorization', async (t) => {
     await assert.rejects(save(admin,draft('overtime','2030-11-06T17:00:00Z','2030-11-06T18:00:00Z')),/non abilitato/);
     assert.equal((await db.query('select count(*)::int n from workspace_hr_attendance')).rows[0].n,0);
     assert.equal((await db.query("select has_function_privilege('anon','public.workspace_hr_save_calendar_request(jsonb)','execute') allowed")).rows[0].allowed,false);
+  });
+  await t.test('operational roster is self plus explicit reports; admin configuration retains the archive',async()=>{
+    const unrelated=id(), inactive=id();
+    for(const user of [unrelated,inactive]) {
+      await db.query('insert into utenti(id,auth_user_id,nome,ruolo_id) values($1,$1,$2,$3)',[user,user===inactive?'Inattivo':'Non associato',normalRole]);
+      await rpc(admin,'workspace_save_user_access',[user,normalRole,[hr],'[]',true]);
+      await rpc(admin,'workspace_hr_configure',['contract',JSON.stringify({user_id:user,effective_from:'2020-01-01',site_id:site,weekly_hours:40,start_time:'08:00',end_time:'17:00',weekdays:[1,2,3,4,5],break_minutes:60,agreed_pay:1000,pay_period:'month',overtime_mode:'paid',overtime_rate:10,overtime_percent:25})]);
+    }
+    await recipients(inactive,[manager]);
+    await db.query('update workspace_hr_members set active=false where user_id=$1',[inactive]);
+    for(const user of [employee,manager,unrelated,inactive]) await db.query(`insert into workspace_hr_attendance(user_id,site_id,request_key,checkin_at,checkout_at,entry_distance,entry_accuracy,site_latitude,site_longitude,checkout_radius,auto_checkout) values($1,$2,gen_random_uuid(),'2030-11-04T08:00Z','2030-11-04T17:00Z',0,1,40,14,100,false)`,[user,site]);
+    const snapshot=(user,config=false)=>rpc(user,'workspace_hr_snapshot',['2030-11-01',config]);
+    const ids=data=>data.employees.map(row=>row.user_id).sort();
+    let own=await snapshot(employee); assert.deepEqual(ids(own),[employee]);
+    let managed=await snapshot(manager); assert.deepEqual(ids(managed),[employee,manager].sort());
+    for(const key of ['shifts','requests','attendance','presence_schedules']) assert.ok(managed[key].every(row=>[employee,manager].includes(row.user_id)),key);
+    assert.ok(managed.shifts.some(row=>row.user_id===employee));
+    assert.equal(managed.contracts,undefined); assert.equal(managed.audit,undefined);
+    assert.deepEqual(ids(await snapshot(admin)),[]);
+    assert.ok(ids(await snapshot(admin,true)).includes(inactive));
+    await assert.rejects(snapshot(employee,true),/admin/);
+    await assert.rejects(save(manager,{...draft(),user_id:unrelated}),/responsabile/);
+    // A reviewer need not have the global HR manager flag to read assigned staff.
+    await recipients(employee,[manager,outsider]);
+    const reviewer=await snapshot(outsider); assert.deepEqual(ids(reviewer),[employee]);
+    assert.ok(reviewer.shifts.some(row=>row.user_id===employee));
+    assert.equal(reviewer.attendance.length,1); assert.equal(reviewer.attendance[0].user_id,employee);
+    assert.ok(reviewer.requests.some(row=>row.user_id===employee));
+    // Revocation applies on the next call, even while the manager flag remains set.
+    await recipients(employee,[outsider]);
+    assert.deepEqual(ids(await snapshot(manager)),[manager]);
+    await assert.rejects(save(manager,draft()),/responsabile/);
+    assert.equal((await db.query("select has_function_privilege('authenticated','public.workspace_hr_snapshot_clocking_history(date,boolean)','execute') allowed")).rows[0].allowed,false);
   });
 });

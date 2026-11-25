@@ -2,14 +2,15 @@ import { useLocation } from 'react-router-dom';
 import {useEffect,useId,useRef,useState} from 'react';
 import {createClient} from '@supabase/supabase-js';
 import {useAuth} from '../../contexts/AuthContext';
+import {onlineRequestError} from './onlineRequestErrors.js';
 import './second-brain.css';
 
 async function brainRequest(session,body,online=false){
  const response=await fetch(online?'/api/second-brain/oauth/connection':'/api/mexal/automation?route=second-brain',{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${session.access_token}`},body:JSON.stringify(body)});
- const result=await response.json();
+ const result=await response.json().catch(()=>({}));
  if(!response.ok||result.success===false){
-  const transportBlocked=response.status===409&&result.code==='EMAIL_TRANSPORT_NOT_READY';
-  throw Object.assign(new Error(transportBlocked?'Il servizio email non è ancora pronto. Riprova dopo il suo aggiornamento.':'Operazione non completata. Riapri la pagina o verifica il collegamento.'),{status:response.status,code:transportBlocked?'EMAIL_TRANSPORT_NOT_READY':undefined});
+  const failure=onlineRequestError(response.status,result);
+  throw Object.assign(new Error(failure.message),{status:response.status,code:failure.code});
  }
  return result;
 }
@@ -115,6 +116,7 @@ function OnlineReviewContent({ session, kind, id }) {
  return <section className="second-brain-page">
   <h1>{isDelegation ? canRevoke ? 'Gestisci la delega email' : 'Autorizza le email richieste in chat' : kind === 'email' ? 'Conferma email' : 'Conferma operazione Second Brain'}</h1>
   {error && <p role="alert">{error}</p>}
+  {error && session && !prepared && <p>Account Workspace attuale: {session.user.email}</p>}
   {!session && <p>Accedi a Workspace con il tuo account personale per verificare questa richiesta.</p>}
   {prepared && <>
    <p>Utente: {prepared.identity?.name || session.user.email}</p>

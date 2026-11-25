@@ -26,6 +26,49 @@ function database(tables = {}, rpcs = {}, apiRowCap = Infinity) {
     },
   };
 }
+
+test("global OCT pagination retains OC/2/640 and existing late RdP links without writes", async () => {
+  const headers = Array.from({length: 1205}, (_, i) => ({
+    id: String(i).padStart(5, "0"), origine: "mexal_oct", codice_cliente: "ALFA",
+    mexal_sigla: "OC", mexal_serie: 2, mexal_numero: i + 1, data_consegna: "2026-12-01",
+  }));
+  const requests = headers.filter(o => o.mexal_numero !== 640).map(o => ({
+    id: `R${o.id}`, ordine_id: o.id, rdp_number: Number(o.id)+1,
+    workspace_status: "READY", contract_version: 4, created_at: "2026-11-25",
+  }));
+  const tables = {
+    ordini_testate: headers,
+    ordini_righe: headers.map(o => ({id:`L${o.id}`,ordine_id:o.id,codice_articolo:"BT0086",quantita:5000,mexal_attiva:true})),
+    workspace_production_requests: requests,
+    workspace_production_request_items: requests.map(r => ({id:`I${r.id}`,production_request_id:r.id,ordine_id:r.ordine_id,ordine_riga_id:`L${r.ordine_id}`})),
+    workspace_v4_previews: requests.map(r => ({id:`P${r.id}`,production_request_id:r.id})),
+    workspace_v4_confirmation_mirrors: requests.map(r => ({id:`C${r.id}`,preview_id:`P${r.id}`})),
+    workspace_production_request_audit: [],
+  };
+  const result = await listProductionWorkbench({admin:database(tables,{},1000)});
+  assert.equal(result.items.length,1205);
+  const target = result.items.filter(o => o.label === "OC/2/640");
+  assert.equal(target.length,1);
+  assert.equal(target[0].requestId,null);
+  assert.equal(target[0].stage,"evaluation");
+  assert.equal(target[0].lines[0].articleCode,"BT0086");
+  assert.equal(target[0].quantity,5000);
+  const late = result.items.find(o => o.id === "01204");
+  assert.equal(late.requestId,"R01204");
+  assert.equal(late.rdpNumber,1205);
+  assert.notEqual(late.stage,"evaluation");
+  const scoped = await listProductionWorkbench({admin:database({...tables,ordini_testate:[...headers,{...headers[0],id:"foreign",codice_cliente:"BETA"}]},{},1000),customerCode:"ALFA"});
+  assert.equal(scoped.items.length,1205);
+  assert.ok(scoped.items.every(o=>o.id!=="foreign"));
+  const backing = database(tables,{},1000);
+  const failing = {from(table) {
+    const query=backing.from(table), range=query.range;
+    query.range=(a,b)=>table==="ordini_testate" && a===500
+      ? Promise.resolve({data:null,error:new Error("second page unavailable")}) : range(a,b);
+    return query;
+  }};
+  await assert.rejects(listProductionWorkbench({admin:failing}),/second page unavailable/);
+});
 const orders = [
   { id: "A", modulo_ordini: "private", origine: "mexal_oct", codice_cliente: "ALFA", codice_agente_mexal: "AG1", mexal_sigla: "OC", mexal_serie: "2", mexal_numero: 139, data_consegna: "2026-09-20" },
   { id: "B", modulo_ordini: "private", origine: "mexal_oct", codice_cliente: "BETA", codice_agente_mexal: "AG2" },

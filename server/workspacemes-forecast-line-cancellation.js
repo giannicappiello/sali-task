@@ -1,13 +1,17 @@
 import { randomUUID } from "node:crypto";
 import { createProgremesProductionClient } from "./progremes-production-client.js";
+import { readAllRows } from "./private-orders-workbench.js";
 
 const ensure = ({ data, error }) => { if (error) throw error; return data; };
 const fail = (message, code = "FORECAST_LINE_CANCELLATION_BLOCKED") => Object.assign(new Error(message), { status: 409, code });
 export const forecastLineKey = (requestId, lineId) => String(requestId) + ":" + String(lineId);
 export async function cancelledForecastLineKeys(admin, requestIds) {
   if (!requestIds.length) return new Set();
-  const rows = ensure(await admin.from("workspace_production_request_audit").select("production_request_id,details")
-    .eq("action", "FORECAST_LINE_CANCELLED").in("production_request_id", requestIds));
+  const rows = [];
+  const ids = [...new Set(requestIds)];
+  for (let offset = 0; offset < ids.length; offset += 100)
+    rows.push(...await readAllRows(() => admin.from("workspace_production_request_audit").select("production_request_id,details")
+      .eq("action", "FORECAST_LINE_CANCELLED").in("production_request_id", ids.slice(offset, offset + 100)).order("id")));
   return new Set((rows || []).filter(row => row.details?.workspaceLineId)
     .map(row => forecastLineKey(row.production_request_id, row.details.workspaceLineId)));
 }

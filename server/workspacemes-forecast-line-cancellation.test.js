@@ -13,13 +13,13 @@ function fixture() {
   };
   const writes = []; let cancelCount=0;
   const admin = {from(table) {
-    assert.ok(tables[table], table); let filters=[]; let single=false; let insert;
+    assert.ok(tables[table], table); let filters=[]; let single=false; let insert; let page=null;
     const q = {select(){return q;},eq(k,v){filters.push(row=>row[k]===v);return q;},
-      in(k,values){filters.push(row=>values.includes(row[k]));return q;},order(){return q;},single(){single=true;return q;},
+      in(k,values){filters.push(row=>values.includes(row[k]));return q;},order(){return q;},range(a,b){page=[a,b];return q;},single(){single=true;return q;},
       insert(value){assert.equal(table,"workspace_production_request_audit");insert=value;return q;},
       then(resolve,reject) {return Promise.resolve().then(()=>{
         if(insert){writes.push(insert);tables[table].push(insert);return {data:null};}
-        const data=tables[table].filter(row=>filters.every(filter=>filter(row)));return {data:single?data[0]:data};
+        const data=tables[table].filter(row=>filters.every(filter=>filter(row)));return {data:single?data[0]:page?data.slice(page[0],page[1]+1):data};
       }).then(resolve,reject);}
     };return q;
   },rpc(){assert.fail("No whole-request cancellation RPC");}};
@@ -48,6 +48,19 @@ test("older MES that ignores line scope is blocked before any cancellation",asyn
   const f=fixture();f.client.previewCancellationV4=async()=>({result:{...f.preview,workspaceLineId:undefined,cancelledForecasts:undefined}});
   await assert.rejects(cancelForecastLine(f.input),{code:"FORECAST_LINE_SCOPE_UNSUPPORTED"});
   assert.equal(f.cancelCount(),0);assert.equal(f.writes.length,0);
+});
+
+test("cancelled forecast receipts beyond the first 1000 rows remain cancelled",async()=>{
+  const f=fixture();
+  f.tables.workspace_production_request_audit=Array.from({length:1105},(_,i)=>({
+    id:String(i).padStart(5,"0"),production_request_id:"rdp",action:"FORECAST_LINE_CANCELLED",
+    details:{workspaceLineId:`line-${i}`},
+  }));
+  f.tables.workspace_production_request_audit.push({id:"foreign",production_request_id:"other",action:"FORECAST_LINE_CANCELLED",details:{workspaceLineId:"foreign"}});
+  const keys=await cancelledForecastLineKeys(f.input.admin,["rdp","rdp"]);
+  assert.equal(keys.size,1105);
+  assert.equal(keys.has(forecastLineKey("rdp","line-1104")),true);
+  assert.equal(f.writes.length,0);
 });
 test("OP conversion, stale hash, wrong or duplicate line fail closed",async()=>{
   for(const kind of ["converted","stale","wrong","duplicate"]) {

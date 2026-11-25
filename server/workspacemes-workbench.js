@@ -1,7 +1,7 @@
 import { cancelledForecastLineKeys, forecastLineKey } from "./workspacemes-forecast-line-cancellation.js";
 import { authoritativeArticleUnit, resolveOctUnitOfMeasure } from "./mexal/unit-of-measure.js";
 import { evaluateProductionRequestCancellation } from "./workspacemes-rdp-cancellation.js";
-import { assertPrivateWorkbenchDetailScope, readRowsByIds } from "./private-orders-workbench.js";
+import { assertPrivateWorkbenchDetailScope, readAllRows, readRowsByIds } from "./private-orders-workbench.js";
 
 // The list only needs identifiers, status and timestamps. last_response can
 // contain a full MES analysis; serializing it for every row can time out PostgREST.
@@ -310,18 +310,20 @@ export async function listProductionWorkbench({ admin, diagnostics = [], product
     lines.sort((a, b) => number(a.mexal_posizione) - number(b.mexal_posizione));
     source = [{ data: scopedOrders }, { data: lines }, { data: requests }];
   } else {
-  let ordersQuery = admin.from("ordini_testate").select("*").eq("origine", "mexal_oct");
-  if (expectedCustomerCode) ordersQuery = ordersQuery.in("codice_cliente", Array.isArray(expectedCustomerCode) ? expectedCustomerCode : [expectedCustomerCode]);
-  const [loadedOrders, loadedRequests] = await Promise.all([
-    ordersQuery.order("data_consegna", { ascending: true }).limit(500),
-    admin.from("workspace_production_requests").select(WORKBENCH_REQUEST_COLUMNS).order("created_at", { ascending: false }).limit(500),
+  const [orders, requests] = await Promise.all([
+    readAllRows(() => {
+      let ordersQuery = admin.from("ordini_testate").select("*").eq("origine", "mexal_oct");
+      if (expectedCustomerCode) ordersQuery = ordersQuery.in("codice_cliente", Array.isArray(expectedCustomerCode) ? expectedCustomerCode : [expectedCustomerCode]);
+      return ordersQuery.order("data_consegna", { ascending: true }).order("id");
+    }),
+    readAllRows(() => admin.from("workspace_production_requests").select(WORKBENCH_REQUEST_COLUMNS)
+      .order("created_at", { ascending: false }).order("id")),
   ]);
-  if (loadedOrders.error || loadedRequests.error) throw loadedOrders.error || loadedRequests.error;
   // A global limit does not override the API row cap. Read all pages for the
   // displayed OCTs so late article positions cannot disappear behind text rows.
-  const loadedLines = await readRowsByIds(admin, "ordini_righe", "ordine_id", (loadedOrders.data || []).map(order => order.id));
+  const loadedLines = await readRowsByIds(admin, "ordini_righe", "ordine_id", orders.map(order => order.id));
   loadedLines.sort((a, b) => number(a.mexal_posizione) - number(b.mexal_posizione));
-  source = [loadedOrders, { data: loadedLines }, loadedRequests];
+  source = [{ data: orders }, { data: loadedLines }, { data: requests }];
   }
   const [{ data: orders, error: orderError }, { data: lines, error: lineError }, { data: requests, error: requestError }] = source;
   if (orderError || lineError || requestError) throw orderError || lineError || requestError;
@@ -340,10 +342,8 @@ export async function listProductionWorkbench({ admin, diagnostics = [], product
   const requestItemByRequestAndLine = new Map();
   if (requestIds.length) {
     const [itemsResult, previewsResult] = await Promise.all([
-      scopedOrders === null ? admin.from("workspace_production_request_items").select("production_request_id,ordine_id,ordine_riga_id,mes_payload").in("production_request_id", requestIds)
-        : readRowsByIds(admin, "workspace_production_request_items", "production_request_id", requestIds, "production_request_id,ordine_id,ordine_riga_id,mes_payload").then((data) => ({ data })),
-      scopedOrders === null ? admin.from("workspace_v4_previews").select("id,production_request_id").in("production_request_id", requestIds)
-        : readRowsByIds(admin, "workspace_v4_previews", "production_request_id", requestIds, "id,production_request_id").then((data) => ({ data })),
+      readRowsByIds(admin, "workspace_production_request_items", "production_request_id", requestIds, "production_request_id,ordine_id,ordine_riga_id,mes_payload").then((data) => ({ data })),
+      readRowsByIds(admin, "workspace_v4_previews", "production_request_id", requestIds, "id,production_request_id").then((data) => ({ data })),
     ]);
     if (itemsResult.error || previewsResult.error) throw itemsResult.error || previewsResult.error;
     for (const item of itemsResult.data || []) {
@@ -355,9 +355,7 @@ export async function listProductionWorkbench({ admin, diagnostics = [], product
     const requestIdByPreview = new Map((previewsResult.data || []).map((preview) => [text(preview.id), text(preview.production_request_id)]));
     const previewIds = [...requestIdByPreview.keys()];
     if (previewIds.length) {
-      const confirmationsResult = scopedOrders === null
-        ? await admin.from("workspace_v4_confirmation_mirrors").select("preview_id").in("preview_id", previewIds)
-        : { data: await readRowsByIds(admin, "workspace_v4_confirmation_mirrors", "preview_id", previewIds, "preview_id") };
+      const confirmationsResult = { data: await readRowsByIds(admin, "workspace_v4_confirmation_mirrors", "preview_id", previewIds, "preview_id") };
       if (confirmationsResult.error) throw confirmationsResult.error;
       for (const confirmation of confirmationsResult.data || []) {
         const confirmedRequestId = requestIdByPreview.get(text(confirmation.preview_id));

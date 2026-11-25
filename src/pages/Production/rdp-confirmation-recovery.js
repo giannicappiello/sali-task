@@ -5,8 +5,10 @@ export function uncertainConfirmation(error) {
 
 export function requiresConfirmationRecovery(preview, code) {
   // The recovery receipt remains in the snapshot for audit after confirmation.
-  // A completed preview must allow a new commercial revision.
-  if (String(preview?.status || "").toUpperCase() === "CONFIRMED") return false;
+  // A completed preview must allow a new commercial revision. Mexal changes can
+  // mark that same preview STALE while retaining its historical recovery receipt.
+  // STALE cannot be confirmed: recalculation creates a fresh preview instead.
+  if (["CONFIRMED", "STALE"].includes(String(preview?.status || "").toUpperCase())) return false;
   // A definitive rejection permits correction/recalculation even if the detail
   // still contains the pending marker captured before that response arrived.
   if (code) return uncertainConfirmation({ code });

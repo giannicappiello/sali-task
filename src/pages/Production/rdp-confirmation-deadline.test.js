@@ -71,3 +71,17 @@ test("la ricevuta di una conferma conclusa non blocca Aggiorna RdP", () => {
   assert.equal(JSON.stringify(preview), before);
   assert.equal(requiresConfirmationRecovery({ ...preview, status: "READY" }), true);
 });
+
+test("RdP STALE dopo revisione Mexal permette il ricalcolo conservando la ricevuta storica", () => {
+  const preview = { status: "STALE", snapshot: { confirmationRecovery: {
+    command: { idempotencyKey: "historical-confirmation" },
+    response: { status: "CONFIRMED", productionOrders: [{ id: 6464, number: "RDP228" }] }
+  } } };
+  const before = JSON.stringify(preview);
+  assert.equal(requiresConfirmationRecovery(preview), false);
+  assert.equal(requiresConfirmationRecovery(preview, "V4_CONFIRM_PENDING"), false);
+  assert.equal(JSON.stringify(preview), before);
+  // An uncertain confirmation for a still-valid preview must remain protected.
+  assert.equal(requiresConfirmationRecovery({ ...preview, status: "READY" }), true);
+  assert.equal(requiresConfirmationRecovery({ ...preview, status: "READY" }, "V4_CONFIRM_PENDING"), true);
+});

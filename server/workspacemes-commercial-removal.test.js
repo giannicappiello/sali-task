@@ -10,7 +10,7 @@ const rows=[{id:'m354',ordine_id:'354',codice_articolo:'FP123M',quantita:15000,m
 function admin(source=rows){
   const tables={ordini_righe:source,workspace_production_request_items:[],workspace_production_request_audit:[]};
   return {rpc:async()=>({data:[{order_id:'152',generation:'a'},{order_id:'153',generation:'b'}]}),from(name){const filters=[];return {
-    select(){return this;},eq(k,v){filters.push(r=>r[k]===v);return this;},neq(k,v){filters.push(r=>r[k]!==v);return this;},
+    select(){return this;},order(){return this;},range(){return this;},eq(k,v){filters.push(r=>r[k]===v);return this;},neq(k,v){filters.push(r=>r[k]!==v);return this;},
     in(k,ids){filters.push(r=>ids.includes(r[k]));return this;},then(resolve){return Promise.resolve({data:tables[name].filter(r=>filters.every(f=>f(r)))}).then(resolve);}};}};
 }
 const reader=async({lineIds})=>{

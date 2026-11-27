@@ -54,7 +54,7 @@ export function validateWorkspaceV4ProductionResult(preview, result) {
     if(retired.length!==expectedRetired.length || new Set(retired).size!==retired.length ||
       expectedRetired.some(id=>!retired.includes(id)) || retired.some(id=>expected.includes(id)))
       throw fail("MES non ha riconciliato le righe rimosse richieste.", "V5_EXTENSION_INCOMPLETE");
-    if (result.productionCreated !== true || !preserved.length || !forecast.length ||
+    if (result.productionCreated !== (preserved.length > 0) || !forecast.length ||
         all.length !== expected.length || new Set(all).size !== all.length || expected.some(id => !all.includes(id)) ||
         productionOrders.length !== preserved.length || new Set(productionOrders.map(row => row.id)).size !== productionOrders.length ||
         productionOrders.some(row => !Number.isSafeInteger(row.id) || row.id <= 0 || !clean(row.number)))

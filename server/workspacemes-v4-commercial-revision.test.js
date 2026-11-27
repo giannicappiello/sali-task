@@ -63,7 +63,7 @@ test('ricalcolo completo invia solo OC497 e persiste evidenza senza cambiare sto
   const tables={workspace_production_requests:[{id:'request',external_id:'external',contract_version:4,demand_snapshot_id:'snapshot',workspace_status:'BLOCKED'}],
     workspace_production_demand_snapshots:[{snapshot:demand,captured_at:'2026-11-18'}],ordini_righe:[],workspace_rdp_cancellations:[],workspace_v4_previews:[],workspace_production_request_audit:[]};
   const frozen=structuredClone(tables);let persisted,command;
-  const admin={from(name){assert.ok(tables[name],`Unexpected table ${name}`);return {select(){return this;},eq(){return this;},neq(){return this;},in(){return this;},order(){return this;},limit(){return this;},then(resolve){return Promise.resolve({data:structuredClone(tables[name])}).then(resolve);}};},
+  const admin={from(name){assert.ok(tables[name],`Unexpected table ${name}`);return {select(){return this;},eq(){return this;},neq(){return this;},in(){return this;},order(){return this;},range(){return this;},limit(){return this;},then(resolve){return Promise.resolve({data:structuredClone(tables[name])}).then(resolve);}};},
     async rpc(name,args){
       if(name==='workspace_rdp_has_deleted_oct') return {data:false};
       if(name==='workspace_reconciled_oct_sources') return {data:[{order_id:'oct',generation:'g',deleted_at:'2026-10-07'}]};

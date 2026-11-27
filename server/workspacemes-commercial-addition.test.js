@@ -7,7 +7,7 @@ const added={id:'pb49',ordine_id:'164',codice_articolo:'PB0049',quantita:10000,m
 function adminFor(links=[],events=[]) {
   const tables={ordini_righe:[added,{...added,id:'description',riga_descrittiva:true},{...added,id:'inactive',mexal_attiva:false}],
     workspace_production_request_items:links,workspace_production_request_audit:events};
-  return {rpc:async()=>({data:[]}),from(name){let filters=[];return {select(){return this;},
+  return {rpc:async()=>({data:[]}),from(name){let filters=[];return {select(){return this;},order(){return this;},range(){return this;},
     eq(k,v){filters.push(r=>r[k]===v);return this;},neq(k,v){filters.push(r=>r[k]!==v);return this;},
     in(k,ids){filters.push(r=>ids.includes(r[k]));return this;},
     then(resolve){return Promise.resolve({data:tables[name].filter(r=>filters.every(f=>f(r)))}).then(resolve);}};}};
@@ -35,5 +35,15 @@ test('a mixed MES receipt must cover each preserved OP and added forecast exactl
     preservedProductionLines:['pb9'],forecastLines:['pb49']};
   assert.equal(validateWorkspaceV4ProductionResult(preview,response)[0].id,6495);
   for(const patch of [{forecastLines:[]},{forecastLines:['pb9']},{preservedProductionLines:[]},{productionOrders:[{id:0,number:'bad'}]}])
+    assert.throws(()=>validateWorkspaceV4ProductionResult(preview,{...response,...patch}),{code:'V5_EXTENSION_INCOMPLETE'});
+});
+
+test('a confirmed RdP without OPs can append forecasts without claiming production was created',()=>{
+  const preview={snapshot:{demands:[{workspaceLineId:'old'},{workspaceLineId:'added'}]}};
+  const response={status:'EXTENDED',productionCreated:false,productionOrders:[],
+    preservedProductionLines:[],forecastLines:['old','added']};
+  assert.deepEqual(validateWorkspaceV4ProductionResult(preview,response),[]);
+  for(const patch of [{productionCreated:true},{forecastLines:['old']},{forecastLines:['old','old']},
+    {productionOrders:[{id:6495,number:'RDP85'}]}])
     assert.throws(()=>validateWorkspaceV4ProductionResult(preview,{...response,...patch}),{code:'V5_EXTENSION_INCOMPLETE'});
 });
